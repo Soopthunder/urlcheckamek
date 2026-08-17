@@ -122,8 +122,8 @@ export default function Home() {
           required
         />
         <button type="submit">Agregar link</button>
-        <button type="button" className="secondary" onClick={handleCheckNow} disabled={checking}>
-          {checking ? "Chequeando…" : "Chequear ahora"}
+        <button type="button" onClick={handleCheckNow} disabled={checking}>
+          {checking ? "Actualizando…" : "Actualizar ahora"}
         </button>
       </form>
 
