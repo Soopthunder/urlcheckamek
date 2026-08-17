@@ -1,0 +1,13 @@
+name: cron-check
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping check endpoint
+        env:
+          SECRET: ${{ secrets.CRON_SECRET }}
+        run: curl -sf "https://urlcheckamek.vercel.app/api/check?secret=$SECRET"
