@@ -28,7 +28,7 @@ async function checkOne(url: string): Promise<CheckResult> {
       checkedAt: new Date().toISOString(),
     };
   } catch (err) {
-    return {
+    return { 
       url,
       ok: false,
       status: null,
@@ -76,11 +76,17 @@ async function checkAll() {
 // fires once/day, so this must be pinged by cron-job.org or similar).
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get("secret");
-  const sameOrigin = req.headers.get("origin") === req.nextUrl.origin;
+  // ponytail: browsers don't reliably send Origin on a same-origin GET fetch —
+  // fall back to Referer (always sent by the dashboard's own fetch call) so the
+  // "Actualizar ahora" button doesn't silently 401 and skip the check + alert.
+  const referer = req.headers.get("referer");
+  const sameOrigin =
+    req.headers.get("origin") === req.nextUrl.origin ||
+    (!!referer && new URL(referer).origin === req.nextUrl.origin);
   const validSecret = !process.env.CRON_SECRET || secret === process.env.CRON_SECRET;
-  // ponytail: the "Chequear ahora" button on the dashboard calls this same route
+  // ponytail: the "Actualizar ahora" button on the dashboard calls this same route
   // without the secret — trust same-origin browser requests, require the secret
-  // only for the external cron pinging from outside (cron-job.org etc).
+  // only for the external cron pinging from outside (GitHub Actions etc).
   if (!validSecret && !sameOrigin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
