@@ -3,7 +3,7 @@ import { getLinks, saveResults, CheckResult } from "@/lib/store";
 
 export const maxDuration = 60; // Vercel: give the batch enough room to finish
 
-// ponytail: plain fetch per link, not a headless browser â a status/error check
+// ponytail: plain fetch per link, not a headless browser — a status/error check
 // on ~130 URLs every 30 min needs speed and low cost, not rendered DOM. Playwright
 // is used for on-demand deep checks (see scripts/smoke-test.mjs) and could power a
 // future "render check" button, not the cron sweep.
@@ -41,6 +41,24 @@ async function checkOne(url: string): Promise<CheckResult> {
   }
 }
 
+// ponytail: ntfy.sh gives free phone push with zero setup — no VAPID keys, no
+// service-worker push handler, no subscription table. Install the ntfy app
+// (iOS/Android) and subscribe to this topic to get alerts. Anyone who knows
+// the topic name can post to it, so it's a random slug, not a secret — swap
+// for real Web Push + a subscriptions table if that ever matters.
+const NTFY_TOPIC = process.env.NTFY_TOPIC;
+
+async function notifyDown(down: CheckResult[]) {
+  if (!NTFY_TOPIC || down.length === 0) return;
+  const preview = down.slice(0, 5).map((r) => `• ${r.url} (${r.error ?? r.status})`).join("\n");
+  const more = down.length > 5 ? `\n…y ${down.length - 5} más` : "";
+  await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+    method: "POST",
+    headers: { Title: `SiteCheck: ${down.length} sitio(s) caído(s)`, Priority: "high", Tags: "warning" },
+    body: preview + more,
+  }).catch(() => {}); // ponytail: best-effort, a notify failure shouldn't fail the check
+}
+
 async function checkAll() {
   const links = await getLinks();
   const BATCH = 15; // ponytail: cap concurrency so ~130 links don't blow past maxDuration
@@ -50,17 +68,18 @@ async function checkAll() {
     results.push(...(await Promise.all(batch.map(checkOne))));
   }
   await saveResults(results);
+  await notifyDown(results.filter((r) => !r.ok));
   return results;
 }
 
-// Called every 30 min by an external cron (see README â Vercel Hobby cron only
+// Called every 30 min by an external cron (see README — Vercel Hobby cron only
 // fires once/day, so this must be pinged by cron-job.org or similar).
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get("secret");
   const sameOrigin = req.headers.get("origin") === req.nextUrl.origin;
   const validSecret = !process.env.CRON_SECRET || secret === process.env.CRON_SECRET;
   // ponytail: the "Chequear ahora" button on the dashboard calls this same route
-  // without the secret â trust same-origin browser requests, require the secret
+  // without the secret — trust same-origin browser requests, require the secret
   // only for the external cron pinging from outside (cron-job.org etc).
   if (!validSecret && !sameOrigin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
