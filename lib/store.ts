@@ -36,8 +36,9 @@ async function pg(path: string, init?: RequestInit) {
       ...(init?.headers || {}),
     },
   });
-  if (!res.ok) throw new Error("Supabase " + path + " -> HTTP " + res.status + ": " + (await res.text()));
-  return res.status === 204 ? null : res.json();
+  const text = await res.text();
+  if (!res.ok) throw new Error("Supabase " + path + " -> HTTP " + res.status + ": " + text);
+  return text ? JSON.parse(text) : null;
 }
 
 // ponytail: file-store fallback keeps `npm run dev` zero-setup when Supabase
