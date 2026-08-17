@@ -3,7 +3,7 @@ import { getLinks, saveResults, CheckResult } from "@/lib/store";
 
 export const maxDuration = 60; // Vercel: give the batch enough room to finish
 
-// ponytail: plain fetch per link, not a headless browser — a status/error check
+// ponytail: plain fetch per link, not a headless browser â a status/error check
 // on ~130 URLs every 30 min needs speed and low cost, not rendered DOM. Playwright
 // is used for on-demand deep checks (see scripts/smoke-test.mjs) and could power a
 // future "render check" button, not the cron sweep.
@@ -53,11 +53,16 @@ async function checkAll() {
   return results;
 }
 
-// Called every 30 min by an external cron (see README — Vercel Hobby cron only
+// Called every 30 min by an external cron (see README â Vercel Hobby cron only
 // fires once/day, so this must be pinged by cron-job.org or similar).
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get("secret");
-  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
+  const sameOrigin = req.headers.get("origin") === req.nextUrl.origin;
+  const validSecret = !process.env.CRON_SECRET || secret === process.env.CRON_SECRET;
+  // ponytail: the "Chequear ahora" button on the dashboard calls this same route
+  // without the secret â trust same-origin browser requests, require the secret
+  // only for the external cron pinging from outside (cron-job.org etc).
+  if (!validSecret && !sameOrigin) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const results = await checkAll();
