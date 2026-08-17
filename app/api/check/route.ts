@@ -28,7 +28,7 @@ async function checkOne(url: string): Promise<CheckResult> {
       checkedAt: new Date().toISOString(),
     };
   } catch (err) {
-    return { 
+    return {
       url,
       ok: false,
       status: null,
@@ -54,7 +54,7 @@ async function notifyDown(down: CheckResult[]) {
   const more = down.length > 5 ? `\n…y ${down.length - 5} más` : "";
   await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
     method: "POST",
-    headers: { Title: `SiteCheck: ${down.length} sitio(s) caído(s)`, Priority: "high", Tags: "warning" },
+    headers: { Title: `SiteCheck: ${down.length} sitio(s) caido(s)`, Priority: "high", Tags: "warning" },
     body: preview + more,
   }).catch(() => {}); // ponytail: best-effort, a notify failure shouldn't fail the check
 }
