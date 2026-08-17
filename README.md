@@ -39,6 +39,41 @@ dashboard los lee y se refresca solo cada minuto. También hay un botón
 Si en algún momento pasás a un plan pago de Vercel, `vercel.json` puede
 llevar un `crons` nativo cada 30 min en vez del servicio externo.
 
+## Instalar como app (PWA)
+
+El dashboard es instalable en el celular como una app nativa: en Chrome
+(Android) o Safari (iOS) abrí el sitio y elegí "Agregar a pantalla de
+inicio" / "Instalar app". Queda con ícono propio y abre en pantalla
+completa, sin la barra del navegador.
+
+// ponytail: manifest.json + un service worker vacío (public/sw.js), sin
+// dependencias nuevas (no next-pwa) — es lo mínimo que pide el navegador
+// para marcar el sitio como instalable. Sin cache offline: el dashboard
+// necesita datos en vivo, así que no tiene sentido cachear.
+
+## Notificaciones al celular cuando algo se cae
+
+Cada corrida de `/api/check` (la del cron cada 30 min o la del botón
+"Actualizar ahora") manda un push gratis via [ntfy.sh](https://ntfy.sh) si
+hay algún sitio caído.
+
+1. Instalá la app **ntfy** ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy) / [iOS](https://apps.apple.com/us/app/ntfy/id1625396347)).
+2. Suscribite al tópico: `sitecheck-amek-5bb261eb27`.
+3. Listo — cuando el check encuentre sitios caídos, llega la notificación
+   con la lista (hasta 5) al toque.
+
+El tópico es un nombre random, no una clave secreta protegida — cualquiera
+que lo conozca puede publicar ahí, pero es lo bastante largo para no
+adivinarlo por accidente. Vive en la env var `NTFY_TOPIC` de Vercel; si
+alguna vez hace falta rotarlo, cambiá esa variable y volvé a suscribirte
+al nuevo nombre.
+
+// ponytail: ntfy.sh en vez de Web Push real — cero VAPID keys, cero tabla
+// de suscripciones, cero manejo de push en el service worker. Si en algún
+// momento hace falta enviar a usuarios específicos (no solo "quien esté
+// suscripto al tópico"), ahí sí conviene pasar a Web Push + una tabla de
+// suscripciones en Supabase.
+
 ## Desarrollo local
 
 ```bash
