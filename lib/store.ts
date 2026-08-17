@@ -20,28 +20,28 @@ export type Report = {
 };
 
 // ponytail: talk to Supabase's auto-generated REST API (PostgREST) with plain
-// fetch — no @supabase/supabase-js needed, one less dependency to carry.
+// fetch â no @supabase/supabase-js needed, one less dependency to carry.
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY; // bypasses RLS, server-side only
 const hasSupabase = !!(SUPABASE_URL && SUPABASE_KEY);
 
 async function pg(path: string, init?: RequestInit) {
-  const res = await fetch(\`\${SUPABASE_URL}/rest/v1\${path}\`, {
+  const res = await fetch(SUPABASE_URL + "/rest/v1" + path, {
     ...init,
     headers: {
       apikey: SUPABASE_KEY!,
-      Authorization: \`Bearer \${SUPABASE_KEY}\`,
+      Authorization: "Bearer " + SUPABASE_KEY,
       "Content-Type": "application/json",
       Prefer: "return=representation",
       ...(init?.headers || {}),
     },
   });
-  if (!res.ok) throw new Error(\`Supabase \${path} -> HTTP \${res.status}: \${await res.text()}\`);
+  if (!res.ok) throw new Error("Supabase " + path + " -> HTTP " + res.status + ": " + (await res.text()));
   return res.status === 204 ? null : res.json();
 }
 
-// ponytail: file-store fallback keeps \`npm run dev\` zero-setup when Supabase
-// env vars aren't present locally. NOT for production — serverless FS is ephemeral.
+// ponytail: file-store fallback keeps `npm run dev` zero-setup when Supabase
+// env vars aren't present locally. NOT for production â serverless FS is ephemeral.
 const DB_FILE = path.join(process.cwd(), ".data", "db.json");
 type FileDB = { links: string[]; results: Record<string, CheckResult>; reports: Record<string, Report> };
 
@@ -69,7 +69,7 @@ export async function getLinks(): Promise<string[]> {
 }
 
 export async function addLink(url: string): Promise<void> {
-  new URL(url); // throws on invalid input — validation at the trust boundary
+  new URL(url); // throws on invalid input â validation at the trust boundary
   if (hasSupabase) {
     await pg("/links", { method: "POST", headers: { Prefer: "resolution=ignore-duplicates" }, body: JSON.stringify({ url }) });
     return;
@@ -81,7 +81,7 @@ export async function addLink(url: string): Promise<void> {
 
 export async function removeLink(url: string): Promise<void> {
   if (hasSupabase) {
-    await pg(\`/links?url=eq.\${encodeURIComponent(url)}\`, { method: "DELETE" });
+    await pg("/links?url=eq." + encodeURIComponent(url), { method: "DELETE" });
     return;
   }
   const db = await readFileDB();
@@ -142,7 +142,7 @@ export async function saveReport(report: Report): Promise<void> {
 
 export async function getReport(url: string): Promise<Report | null> {
   if (hasSupabase) {
-    const rows = (await pg(\`/reports?url=eq.\${encodeURIComponent(url)}&select=*\`)) as any[];
+    const rows = (await pg("/reports?url=eq." + encodeURIComponent(url) + "&select=*")) as any[];
     if (!rows.length) return null;
     const r = rows[0];
     return {
