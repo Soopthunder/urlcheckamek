@@ -65,9 +65,14 @@ async function checkAll() {
   const results: CheckResult[] = [];
   for (let i = 0; i < links.length; i += BATCH) {
     const batch = links.slice(i, i + BATCH);
-    results.push(...(await Promise.all(batch.map(checkOne))));
+    const batchResults = await Promise.all(batch.map(checkOne));
+    // ponytail: save per batch, not once at the end — ~130 real network checks can
+    // run long enough to hit the platform's function timeout mid-sweep; saving as we
+    // go means the links already checked keep their fresh result instead of the
+    // whole run being silently lost (this was the "no actualiza todas las URL" bug).
+    await saveResults(batchResults);
+    results.push(...batchResults);
   }
-  await saveResults(results);
   await notifyDown(results.filter((r) => !r.ok));
   return results;
 }
