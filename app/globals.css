@@ -83,6 +83,29 @@ th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--bor
 th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; }
 tr:hover { background: rgba(255,255,255,0.02); }
 
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.sort-ind { display: inline-block; margin-left: 4px; font-size: 10px; opacity: 0.6; }
+th.sortable:hover .sort-ind { opacity: 1; }
+
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.chip {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip:hover { color: var(--text); border-color: var(--accent); }
+.chip.active { color: white; background: var(--accent); border-color: var(--accent); }
+.chip.down.active { background: var(--down); border-color: var(--down); }
+.chip.ok.active { background: var(--ok); border-color: var(--ok); }
+.chip-n { opacity: 0.75; font-size: 11px; }
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -123,3 +146,53 @@ tr:hover { background: rgba(255,255,255,0.02); }
   font-weight: 600;
   font-size: 12px;
 }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.modal-head { display: flex; justify-content: space-between; align-items: center; }
+.modal-controls { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.modal-controls select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.report-text {
+  flex: 1;
+  min-height: 280px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+}
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
