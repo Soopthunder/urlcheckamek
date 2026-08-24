@@ -418,7 +418,7 @@ export default function Home() {
                 <span className="score" style={{ background: scoreColor(report.performanceScore) + "22", color: scoreColor(report.performanceScore) }}>
                   {report.performanceScore ?? "N/A"}
                 </span>{" "}
-                · generado {new Date(report.generatedAt).toLocaleString("es-AR)}
+                · generado {new Date(report.generatedAt).toLocaleString("es-AR")}
               </p>
               <ul className="report-list">
                 {report.suggestions.map((s, i) => <li key={i}>💡 {s}</li>)}
