@@ -47,7 +47,8 @@ Navegador (Playwright) → Extractor (código) → Analista · IA 1 ⇄ Revisor 
 - **Extractor + mediciones (código)**: sobre la página ya renderizada saca los datos SEO
   (status, title, meta, H1/H2, canonical, hreflang, alt, trackers) y **mide**, en cada
   tamaño de pantalla: scroll horizontal, texto cortado, enlaces/botones tapados, imágenes
-  deformadas, banners fijos que tapan más del 30% de la pantalla, botones muy chicos para
+  deformadas, texto con poco contraste (WCAG AA: 4.5:1, o 3:1 en texto grande), banners
+  fijos que tapan más del 30% de la pantalla, botones muy chicos para
   el dedo, el menú móvil (lo abre y cuenta los enlaces) y bloques que se ven en escritorio
   pero no en móvil. En el texto detecta caracteres corruptos (`Ã©`), placeholders
   (`Lorem ipsum`) y bloques en otro idioma. Cada medición lleva un recorte de la captura.

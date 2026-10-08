@@ -573,7 +573,8 @@ export async function runAudit(urls: string[], project: string, emit: Emit, sign
               // una medición del mismo tipo en este tamaño, la medición manda.
               const regla = /menú|menu/i.test(p.descripcion) ? "menu-movil"
                 : { "texto cortado o ilegible": "texto-cortado", "imagen deformada o mal recortada": "imagen-deformada",
-                    "banner o popup que bloquea": "elemento-fijo-grande", "superposición": "elemento-tapado" }[p.tipo];
+                    "banner o popup que bloquea": "elemento-fijo-grande", "superposición": "elemento-tapado",
+                    "contraste insuficiente": "contraste-insuficiente" }[p.tipo];
               const medida = medidos.find((m) => m.viewports.includes(e.r.viewport) && regla && m.regla?.startsWith(regla));
               if (medida || /ya (lo )?(midi|medi)/i.test(p.descripcion)) {
                 descartados.push({

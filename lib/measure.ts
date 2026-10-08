@@ -168,7 +168,67 @@ const medirPantallaFn = enPagina<{ esPrimera: boolean; esUltima: boolean }, Medi
     });
   }
 
-  // 2. Enlaces y botones tapados por otro elemento (elementFromPoint en su centro).
+  // 2. Contraste del texto (WCAG 2.1 AA: 4.5:1, o 3:1 para texto grande). El fondo se toma
+  // de lo que está realmente detrás en pantalla (elementsFromPoint), no del árbol DOM. Si
+  // detrás hay una imagen, video, gradiente o fondo semitransparente, no se puede medir
+  // con certeza y se saltea (mejor no reportar que inventar).
+  const rgb = (c) => {
+    const m = /^rgba?\\(([^)]+)\\)$/.exec(c);
+    if (!m) return null; // oklch(), color()…: no se mide
+    const [r, g, b, a = 1] = m[1].split(/[\\s,\\/]+/).filter(Boolean).map(Number);
+    return { r, g, b, a };
+  };
+  const lum = ({ r, g, b }) => {
+    const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  let bajos = 0;
+  for (const el of document.body.querySelectorAll("*")) {
+    if (bajos >= 6) break;
+    const propio = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 2);
+    if (!propio || !vis(el) || el.matches(":disabled")) continue;
+    const r = el.getBoundingClientRect();
+    const cx = r.left + Math.min(r.width, 40) / 2, cy = r.top + r.height / 2;
+    if (cx < 0 || cy < 0 || cx > vw || cy > vh) continue;
+    const pila = document.elementsFromPoint(cx, cy);
+    const i = pila.indexOf(el);
+    // tapado en esta pantalla (ej. por un banner fijo): se mide en otra donde se vea
+    if (i < 0 || !pila.slice(0, i).every((e) => el.contains(e))) continue;
+    let bg = null;
+    for (const e of pila.slice(i)) {
+      if (/^(img|video|canvas|picture|iframe|svg)$/i.test(e.tagName)) { bg = "imagen"; break; }
+      const cs = getComputedStyle(e);
+      if (cs.backgroundImage !== "none") { bg = "imagen"; break; }
+      const c = rgb(cs.backgroundColor);
+      if (!c) { bg = "desconocido"; break; }
+      if (c.a >= 0.95) { bg = c; break; }
+      if (c.a > 0.05) { bg = "semitransparente"; break; }
+    }
+    if (bg === null) bg = { r: 255, g: 255, b: 255, a: 1 }; // nada pintado detrás: fondo blanco del navegador
+    if (typeof bg === "string") continue;
+    const cs = getComputedStyle(el);
+    let fg = rgb(cs.color);
+    if (!fg) continue;
+    if (fg.a < 1) fg = { r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a), a: 1 };
+    const l1 = lum(fg), l2 = lum(bg);
+    const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    const px = parseFloat(cs.fontSize);
+    const grande = px >= 24 || (px >= 18.66 && Number(cs.fontWeight) >= 700);
+    const minimo = grande ? 3 : 4.5;
+    if (ratio >= minimo) continue;
+    bajos++;
+    const m = 20;
+    out.push({
+      regla: "contraste-insuficiente", categoria: "Visual", prioridad: ratio < 2 ? "Alta" : "Media", estado: "confirmado",
+      descripcion: "Texto con poco contraste (" + ratio.toFixed(2) + ":1, mínimo " + minimo + ":1): " + '"' + texto(el) + '"',
+      selector: sel(el),
+      rectPantalla: { x: Math.max(0, r.left - m), y: Math.max(0, r.top - m), w: Math.min(vw, r.right + m) - Math.max(0, r.left - m), h: Math.min(vh, r.bottom + m) - Math.max(0, r.top - m) },
+      medicion: "color " + cs.color + " sobre fondo rgb(" + bg.r + ", " + bg.g + ", " + bg.b + ") · " + px + "px" + (grande ? " (texto grande)" : "") + " · WCAG AA pide " + minimo + ":1",
+      recomendacion: "Oscurecer el texto o aclarar el fondo hasta llegar a " + minimo + ":1 (se verifica con cualquier medidor de contraste WCAG)",
+    });
+  }
+
+  // 3. Enlaces y botones tapados por otro elemento (elementFromPoint en su centro).
   const objetivos = [...document.querySelectorAll("a[href], button, [role=button], input:not([type=hidden]), select, textarea")].filter(vis);
   let tapados = 0;
   for (const t of objetivos) {
