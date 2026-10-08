@@ -32,10 +32,19 @@ campo de "Agregar link".
 Seleccioná URLs en la tabla → **Auditar con agentes**. La conversación se ve en vivo:
 
 ```
-Extractor (código) → Analista · IA 1 ⇄ Revisor · IA 2 → Soluciones
+Navegador (Playwright) → Extractor (código) → Analista · IA 1 ⇄ Revisor · IA 2 → Soluciones
 ```
 
-- **Extractor**: descarga cada URL y saca datos duros (status, title, meta, H1/H2,
+- **Navegador**: abre cada URL en Microsoft Edge (sin ventana, vía Playwright) en 5
+  tamaños de pantalla (1366×768, 1920×1080, 768×1024, 390×844, 360×800). En cada uno
+  cierra el banner de cookies (prefiere "Rechazar"), recorre la página para cargar lo
+  diferido, captura cada pantalla y registra los recursos que no cargan, separando los
+  que **afectan al usuario** (CSS, JS, imágenes y fuentes propios) de las **advertencias**
+  (terceros, errores de JS sin impacto comprobado). El panel muestra esas capturas
+  **en vivo**: son las de la misma sesión que se audita. Es de solo lectura: bloquea todo
+  envío de formularios, reservas y pagos (y de paso no ensucia GA4 ni el Pixel). Si no
+  hay Edge ni Chrome, audita igual con el HTML crudo y lo avisa.
+- **Extractor**: sobre la página ya renderizada, saca datos duros (status, title, meta, H1/H2,
   canonical, hreflang, alt, trackers GA4/GTM/Pixel/SynXis, tiempo de respuesta).
   No es IA, así los agentes no pueden inventar datos.
 - **Analista**: lista problemas citando el dato que los prueba.
@@ -43,7 +52,8 @@ Extractor (código) → Analista · IA 1 ⇄ Revisor · IA 2 → Soluciones
   el reporte está mal se lo **devuelve** al Analista con objeciones. Discuten
   hasta que aprueba o se acaban las rondas.
 - **Soluciones**: arma el reporte final por área (SEO, SEM, Técnica, Contenido/UX)
-  y lo guarda en `workspace\proyectos\<proyecto>\reporte_final_priorizado_<fecha>.md`.
+  y lo guarda en `workspace\proyectos\<proyecto>\<fecha>\reporte_final_priorizado.md`,
+  junto a la carpeta `capturas\` y una sección de evidencia por tamaño de pantalla.
 
 Todo el comportamiento se edita en la carpeta `workspace` (botón "Abrir carpeta
 de agentes"), sin reinstalar:
@@ -54,7 +64,7 @@ de agentes"), sin reinstalar:
 | `contexto/*.md` | Criterios de prioridad y límites entre áreas (cualquier `.md` nuevo se incluye) |
 | `skills/0X_*.md` | La tarea y el formato de salida de cada agente |
 | `memoria/memoria.md` | Lo que NO es error (también desde "Agregar a memoria" en la app) |
-| `config.json` | `modelo` de Ollama, `rondasDebate`, `contexto` (tokens) |
+| `config.json` | `modelo` de Ollama, `rondasDebate`, `contexto` (tokens), `viewports`, `timeoutNavegacionMs`, `maxCapturasPorViewport`, `maxAlturaScroll` |
 
 ## Desarrollo
 
@@ -71,4 +81,3 @@ Smoke test (con `npm run dev` corriendo): `node scripts/smoke-test.mjs`.
 
 - Sin historial de checks: solo se guarda el último por link.
 - Sin firma de código ni auto-update.
-- El Extractor lee HTML crudo: sitios 100% renderizados con JS necesitarían Playwright.
