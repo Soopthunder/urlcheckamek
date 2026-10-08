@@ -1,118 +1,74 @@
 # SiteCheck
 
-Monitor de status para tus sitios (Boden, La Urumpta, Aken, Amek Group).
-Chequea cada link, guarda status/latencia, deja agregar/quitar links desde
-la UI, y genera reportes de mejora on-demand con Google PageSpeed Insights
-(gratis).
+App de escritorio (Windows) que monitorea tus sitios (Boden, La Urumpta, Aken,
+Amek Group) cada 30 min y los audita con un equipo de agentes de IA que corren
+**localmente** con Ollama.
 
-## Deploy en Vercel
+## Instalar
 
-1. Subí esta carpeta a un repo de GitHub y conectalo en vercel.com/new
-   (o `npx vercel` desde acá).
-2. **Storage**: en el proyecto de Vercel → Storage → Marketplace → agregá
-   una integración **Redis** (Upstash, tiene free tier). Esto setea solas
-   las env vars `KV_REST_API_URL` / `KV_REST_API_TOKEN`.
-   - Sin esto, la app funciona igual pero guarda todo en un archivo local
-     que se borra en cada deploy — solo sirve para probar en tu compu.
-3. **Env vars** (Project Settings → Environment Variables):
-   - `CRON_SECRET`: cualquier string random, protege `/api/check`.
-   - `PAGESPEED_API_KEY` (opcional): sin ella también funciona, con cuota
-     más chica. Se saca gratis en Google Cloud Console → APIs & Services →
-     Credentials → "PageSpeed Insights API".
-4. Deploy.
+1. Instalá [Ollama](https://ollama.com) y bajá el modelo:
+   ```
+   winget install Ollama.Ollama
+   ollama pull qwen2.5:7b
+   ```
+2. Ejecutá `dist/SiteCheck Setup 0.1.0.exe`. No está firmado, así que Windows
+   SmartScreen avisa: "Más información" → "Ejecutar de todas formas".
 
-## El check cada 30 minutos
+Los datos viven en `%APPDATA%\sitecheck\` (`db.json` + carpeta `workspace\`).
 
-Vercel Cron en el plan Hobby (gratis) solo permite **1 corrida por día**,
-no cada 30 min. Para el intervalo real hay que pingear el endpoint desde
-afuera:
+## Monitoreo
 
-1. Andá a [cron-job.org](https://cron-job.org) (gratis, sin límite de
-   frecuencia razonable) o [EasyCron](https://www.easycron.com).
-2. Creá un cron job que haga `GET` cada 30 min a:
-   `https://tu-app.vercel.app/api/check?secret=EL_CRON_SECRET`
+La app chequea todos los links al iniciar y cada 30 min. Cerrar la ventana la
+manda a la bandeja del sistema (junto al reloj) y el monitoreo sigue; desde el
+ícono de la bandeja: abrir, chequear ahora, **Iniciar con Windows** (arranca
+oculta en la bandeja) y Salir.
+Si hay sitios caídos muestra una notificación de Windows y manda un push a
+[ntfy](https://ntfy.sh), tópico `sitecheck-amek-5bb261eb27` (suscribite desde la
+app ntfy en el celular). Se pueden importar URLs pegando un `sitemap.xml` en el
+campo de "Agregar link".
 
-Eso corre el chequeo de todos los links y guarda los resultados. El
-dashboard los lee y se refresca solo cada minuto. También hay un botón
-"Chequear ahora" para forzarlo manualmente.
+## Agentes de auditoría
 
-Si en algún momento pasás a un plan pago de Vercel, `vercel.json` puede
-llevar un `crons` nativo cada 30 min en vez del servicio externo.
+Seleccioná URLs en la tabla → **Auditar con agentes**. La conversación se ve en vivo:
 
-## Instalar como app (PWA)
+```
+Extractor (código) → Analista · IA 1 ⇄ Revisor · IA 2 → Soluciones
+```
 
-El dashboard es instalable en el celular como una app nativa: en Chrome
-(Android) o Safari (iOS) abrí el sitio y elegí "Agregar a pantalla de
-inicio" / "Instalar app". Queda con ícono propio y abre en pantalla
-completa, sin la barra del navegador.
+- **Extractor**: descarga cada URL y saca datos duros (status, title, meta, H1/H2,
+  canonical, hreflang, alt, trackers GA4/GTM/Pixel/SynXis, tiempo de respuesta).
+  No es IA, así los agentes no pueden inventar datos.
+- **Analista**: lista problemas citando el dato que los prueba.
+- **Revisor**: descarta falsos positivos, prioriza (Crítica/Alta/Media/Baja) y si
+  el reporte está mal se lo **devuelve** al Analista con objeciones. Discuten
+  hasta que aprueba o se acaban las rondas.
+- **Soluciones**: arma el reporte final por área (SEO, SEM, Técnica, Contenido/UX)
+  y lo guarda en `workspace\proyectos\<proyecto>\reporte_final_priorizado_<fecha>.md`.
 
-// ponytail: manifest.json + un service worker vacío (public/sw.js), sin
-// dependencias nuevas (no next-pwa) — es lo mínimo que pide el navegador
-// para marcar el sitio como instalable. Sin cache offline: el dashboard
-// necesita datos en vivo, así que no tiene sentido cachear.
+Todo el comportamiento se edita en la carpeta `workspace` (botón "Abrir carpeta
+de agentes"), sin reinstalar:
 
-## Notificaciones al celular cuando algo se cae
+| Archivo | Qué controla |
+|---|---|
+| `AGENTS.md` | Reglas generales que leen todos los agentes |
+| `contexto/*.md` | Criterios de prioridad y límites entre áreas (cualquier `.md` nuevo se incluye) |
+| `skills/0X_*.md` | La tarea y el formato de salida de cada agente |
+| `memoria/memoria.md` | Lo que NO es error (también desde "Agregar a memoria" en la app) |
+| `config.json` | `modelo` de Ollama, `rondasDebate`, `contexto` (tokens) |
 
-Cada corrida de `/api/check` (la del cron cada 30 min o la del botón
-"Actualizar ahora") manda un push gratis via [ntfy.sh](https://ntfy.sh) si
-hay algún sitio caído.
+## Desarrollo
 
-1. Instalá la app **ntfy** ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy) / [iOS](https://apps.apple.com/us/app/ntfy/id1625396347)).
-2. Suscribite al tópico: `sitecheck-amek-5bb261eb27`.
-3. Listo — cuando el check encuentre sitios caídos, llega la notificación
-   con la lista (hasta 5) al toque.
-
-El tópico es un nombre random, no una clave secreta protegida — cualquiera
-que lo conozca puede publicar ahí, pero es lo bastante largo para no
-adivinarlo por accidente. Vive en la env var `NTFY_TOPIC` de Vercel; si
-alguna vez hace falta rotarlo, cambiá esa variable y volvé a suscribirte
-al nuevo nombre.
-
-// ponytail: ntfy.sh en vez de Web Push real — cero VAPID keys, cero tabla
-// de suscripciones, cero manejo de push en el service worker. Si en algún
-// momento hace falta enviar a usuarios específicos (no solo "quien esté
-// suscripto al tópico"), ahí sí conviene pasar a Web Push + una tabla de
-// suscripciones en Supabase.
-
-## Desarrollo local
-
-```bash
+```
 npm install
-npm run dev
+npm run dev     # web en http://localhost:3000, datos en ./.data, agentes en ./workspace
+npm run app     # build + abre la app de escritorio
+npm run dist    # build + instalador en dist/
 ```
 
-Sin `KV_REST_API_URL` seteada, usa un archivo `.data/db.json` como base
-de datos (se crea solo). Sirve para probar la UI, pero no para producción
-(el filesystem de Vercel es efímero).
-
-## Test automático (Playwright)
-
-```bash
-npm run build && npm start &
-node scripts/smoke-test.mjs http://localhost:3000
-```
-
-Abre el dashboard, corre `/api/check`, agrega y borra un link de prueba.
-Corrido acá mismo confirmó que todo el flujo anda — el único "fallo" que
-vas a ver en este sandbox es que todos los links salen "caídos" porque
-este entorno no tiene salida a internet abierta, no por un bug de la app.
-
-## Cómo decide qué está "mal" en un sitio
-
-`/api/check` pega un `fetch` a cada URL (no un browser completo — no hace
-falta renderizar para saber si un sitio responde, y así 130 links tardan
-segundos en vez de minutos). Status < 400 = OK. Si querés un chequeo más
-profundo (JS roto, errores de consola, contenido faltante) con Playwright
-renderizando cada página, se puede agregar un endpoint separado que corra
-bajo demanda — no conviene meterlo en el barrido de cada 30 min por
-tiempo/costo en serverless.
+Smoke test (con `npm run dev` corriendo): `node scripts/smoke-test.mjs`.
 
 ## Qué se dejó afuera (a propósito)
 
-- Sin login/auth en la UI — si necesitás que no sea pública, agregar
-  Vercel Password Protection o un middleware simple cuando haga falta.
-- Sin historial de checks (solo se guarda el último por link) — si
-  necesitás gráficos de uptime histórico, agregar `hset` con timestamp
-  en vez de sobrescribir.
-- Sin notificaciones (email/Slack cuando algo cae) — agregar un `fetch`
-  a un webhook en `/api/check` cuando `down.length > 0` si lo necesitás.
+- Sin historial de checks: solo se guarda el último por link.
+- Sin firma de código ni auto-update.
+- El Extractor lee HTML crudo: sitios 100% renderizados con JS necesitarían Playwright.

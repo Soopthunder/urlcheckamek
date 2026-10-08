@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getReport, saveReport, Report } from "@/lib/store";
 
-export const maxDuration = 60; // PageSpeed audits are slow (10-30s)
-
 const PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
 // ponytail: Google PageSpeed Insights is free (no billing account needed, an API

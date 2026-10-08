@@ -1,7 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getLinks, saveResults, CheckResult } from "@/lib/store";
-
-export const maxDuration = 60; // Vercel: give the batch enough room to finish
 
 // ponytail: plain fetch per link, not a headless browser — a status/error check
 // on ~130 URLs every 30 min needs speed and low cost, not rendered DOM. Playwright
@@ -61,15 +59,13 @@ async function notifyDown(down: CheckResult[]) {
 
 async function checkAll() {
   const links = await getLinks();
-  const BATCH = 15; // ponytail: cap concurrency so ~130 links don't blow past maxDuration
+  const BATCH = 15; // ponytail: cap concurrency so ~130 parallel fetches don't trip rate limits
   const results: CheckResult[] = [];
   for (let i = 0; i < links.length; i += BATCH) {
     const batch = links.slice(i, i + BATCH);
     const batchResults = await Promise.all(batch.map(checkOne));
-    // ponytail: save per batch, not once at the end — ~130 real network checks can
-    // run long enough to hit the platform's function timeout mid-sweep; saving as we
-    // go means the links already checked keep their fresh result instead of the
-    // whole run being silently lost (this was the "no actualiza todas las URL" bug).
+    // ponytail: save per batch, not once at the end — if the app is closed mid-sweep
+    // the links already checked keep their fresh result.
     await saveResults(batchResults);
     results.push(...batchResults);
   }
@@ -77,24 +73,9 @@ async function checkAll() {
   return results;
 }
 
-// Called every 30 min by an external cron (see README — Vercel Hobby cron only
-// fires once/day, so this must be pinged by cron-job.org or similar).
-export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get("secret");
-  // ponytail: browsers don't reliably send Origin on a same-origin GET fetch —
-  // fall back to Referer (always sent by the dashboard's own fetch call) so the
-  // "Actualizar ahora" button doesn't silently 401 and skip the check + alert.
-  const referer = req.headers.get("referer");
-  const sameOrigin =
-    req.headers.get("origin") === req.nextUrl.origin ||
-    (!!referer && new URL(referer).origin === req.nextUrl.origin);
-  const validSecret = !process.env.CRON_SECRET || secret === process.env.CRON_SECRET;
-  // ponytail: the "Actualizar ahora" button on the dashboard calls this same route
-  // without the secret — trust same-origin browser requests, require the secret
-  // only for the external cron pinging from outside (GitHub Actions etc).
-  if (!validSecret && !sameOrigin) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+// Called every 30 min by the desktop app (electron/main.cjs) and by the
+// "Actualizar ahora" button. The server only listens on 127.0.0.1 (see proxy.ts).
+export async function GET() {
   const results = await checkAll();
   const down = results.filter((r) => !r.ok);
   return NextResponse.json({ checked: results.length, down: down.length, results });

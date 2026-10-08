@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import AgentsPanel from "./agents-panel";
 
 type CheckResult = {
   url: string;
@@ -179,6 +180,9 @@ export default function Home() {
   const [exportFormat, setExportFormat] = useState<ReportFormat>("grouped");
   const [copyFeedback, setCopyFeedback] = useState(false);
 
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [agentsOpen, setAgentsOpen] = useState(false);
+
   const load = useCallback(async () => {
     const res = await fetch("/api/links");
     const data = await res.json();
@@ -202,6 +206,8 @@ export default function Home() {
       body: JSON.stringify({ url: newUrl.trim() }),
     });
     if (res.ok) {
+      const { added } = await res.json();
+      if (added !== 1) alert(`${added} URL(s) nuevas agregadas desde el sitemap`);
       setNewUrl("");
       load();
     } else {
@@ -312,7 +318,7 @@ export default function Home() {
       <form className="toolbar" onSubmit={handleAdd}>
         <input
           type="url"
-          placeholder="https://nuevo-sitio.com/"
+          placeholder="https://nuevo-sitio.com/ o https://sitio.com/sitemap.xml"
           value={newUrl}
           onChange={(e) => setNewUrl(e.target.value)}
           required
@@ -320,6 +326,9 @@ export default function Home() {
         <button type="submit">Agregar link</button>
         <button type="button" onClick={handleCheckNow} disabled={checking}>
           {checking ? "Actualizando…" : "Actualizar ahora"}
+        </button>
+        <button type="button" onClick={() => setAgentsOpen(true)} disabled={!selected.size}>
+          Auditar con agentes ({selected.size})
         </button>
         <button type="button" className="secondary" onClick={() => setExportOpen(true)}>
           Exportar reporte
@@ -356,6 +365,14 @@ export default function Home() {
         <table>
           <thead>
             <tr>
+              <th>
+                <input
+                  type="checkbox"
+                  title="Seleccionar los visibles"
+                  checked={visibleLinks.length > 0 && visibleLinks.every((u) => selected.has(u))}
+                  onChange={(e) => setSelected(e.target.checked ? new Set([...selected, ...visibleLinks]) : new Set([...selected].filter((u) => !visibleLinks.includes(u))))}
+                />
+              </th>
               <th className="sortable" onClick={() => toggleSort("url")}>
                 Sitio <span className="sort-ind">{sortIndicator(sort, "url")}</span>
               </th>
@@ -373,12 +390,23 @@ export default function Home() {
           </thead>
           <tbody>
             {visibleLinks.length === 0 && (
-              <tr><td colSpan={5} className="mini" style={{ padding: "20px 8px" }}>Ningún sitio coincide con el filtro.</td></tr>
+              <tr><td colSpan={6} className="mini" style={{ padding: "20px 8px" }}>Ningún sitio coincide con el filtro.</td></tr>
             )}
             {visibleLinks.map((url) => {
               const r = results[url];
               return (
                 <tr key={url}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(url)}
+                      onChange={() => {
+                        const next = new Set(selected);
+                        if (!next.delete(url)) next.add(url);
+                        setSelected(next);
+                      }}
+                    />
+                  </td>
                   <td className="url-cell">
                     <a href={url} target="_blank" rel="noreferrer">{displayUrl(url)}</a>
                   </td>
@@ -427,6 +455,8 @@ export default function Home() {
           )}
         </div>
       )}
+
+      {agentsOpen && <AgentsPanel urls={[...selected]} onClose={() => setAgentsOpen(false)} />}
 
       {exportOpen && (
         <div className="modal-overlay" onClick={() => setExportOpen(false)}>

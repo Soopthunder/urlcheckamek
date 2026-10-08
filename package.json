@@ -4,20 +4,52 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
-  },
-  "dependencies": {
-    "@upstash/redis": "^1.38.2",
-    "next": "16.3.1",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "build": "next build && node scripts/prepare-standalone.mjs",
+    "app": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --win"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "next": "16.4.0",
     "playwright": "^1.56.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "typescript": "^5"
+  },
+  "description": "Monitor de sitios con agentes de auditoría locales (Ollama)",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.amek.sitecheck",
+    "productName": "SiteCheck",
+    "files": [
+      "electron/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "workspace",
+        "to": "workspace",
+        "filter": [
+          "**/*",
+          "!proyectos/**"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon-512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "afterPack": "scripts/after-pack.cjs"
   }
 }
