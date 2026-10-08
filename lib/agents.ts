@@ -569,6 +569,19 @@ export async function runAudit(urls: string[], project: string, emit: Emit, sign
                 descartados.push({ url, descripcion: `${e.r.viewport} pantalla ${e.n}: ${p.descripcion}`, origen: "ia-visual", motivo: "confianza baja del inspector visual (descartado por código)" });
                 continue;
               }
+              // El modelo repite mediciones aunque se le pasen (a veces hasta lo dice). Si ya hay
+              // una medición del mismo tipo en este tamaño, la medición manda.
+              const regla = /menú|menu/i.test(p.descripcion) ? "menu-movil"
+                : { "texto cortado o ilegible": "texto-cortado", "imagen deformada o mal recortada": "imagen-deformada",
+                    "banner o popup que bloquea": "elemento-fijo-grande", "superposición": "elemento-tapado" }[p.tipo];
+              const medida = medidos.find((m) => m.viewports.includes(e.r.viewport) && regla && m.regla?.startsWith(regla));
+              if (medida || /ya (lo )?(midi|medi)/i.test(p.descripcion)) {
+                descartados.push({
+                  url, descripcion: `${e.r.viewport} pantalla ${e.n}: ${p.descripcion}`, origen: "ia-visual",
+                  motivo: `repite una medición del código${medida ? ` (${medida.descripcion})` : ""} (descartado por código)`,
+                });
+                continue;
+              }
               candidatos.push({
                 tmp: `V${candidatos.length + 1}`, tipo: "visual",
                 visual: { vp: e.vp, scrollY: (e.n - 1) * e.vp.alto, zona: p.zona, pantalla: e.n, captura: e.captura },
@@ -730,6 +743,9 @@ export async function runAudit(urls: string[], project: string, emit: Emit, sign
           if (!d) {
             // el Revisor no se pronunció: no se inventa un veredicto
             publicar([{ ...c.base, estado: "requiere revisión manual" }]);
+          } else if (d.decision === "aprobar" && c.tipo === "visual") {
+            // el Revisor no ve imágenes: su aprobación no alcanza, lo decide la recaptura
+            await verificarVisual(c, d.prioridad);
           } else if (d.decision === "aprobar") {
             publicar([{ ...c.base, prioridad: d.prioridad }]);
           } else if (d.decision === "descartar") {

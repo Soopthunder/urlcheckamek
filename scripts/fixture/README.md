@@ -17,4 +17,5 @@ SiteCheck. Lo que la auditoría tiene que encontrar:
 | "CafÃ©" | caracteres-corruptos |
 | "Lorem ipsum" | placeholder-publicado |
 | Bloque "Our Spa" en inglés | mezcla-de-idiomas |
+| Texto gris claro sobre blanco en "Horarios" | contraste insuficiente (solo lo ve el Inspector visual → recaptura) |
 | "habitasiones", "incluído", "reservacion" | errores lingüísticos (IA, verificados contra el texto) |
