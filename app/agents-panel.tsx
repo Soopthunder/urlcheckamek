@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type AgentEvent = { agent?: string; kind: string; text?: string };
+type AgentEvent = { agent?: string; kind: string; text?: string; url?: string; viewport?: string; captura?: string };
+// capturas[url][viewport] = rutas relativas a proyectos/, en el orden en que se tomaron
+type Capturas = Record<string, Record<string, string[]>>;
+const img = (f: string) => `/api/captura?f=${encodeURIComponent(f)}`;
 type Bubble = { agent: string; kind: string; text: string };
 type Status = { ollama: boolean; modelo: string; modeloListo: boolean; workspace: string };
 
@@ -21,6 +24,12 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
   const [running, setRunning] = useState(false);
   const [nota, setNota] = useState("");
   const [notaOk, setNotaOk] = useState(false);
+  // visor: muestra las capturas de la misma sesión de Playwright que se está auditando
+  const [vivo, setVivo] = useState<{ url: string; viewport: string; accion: string; log: string[] } | null>(null);
+  const [capturas, setCapturas] = useState<Capturas>({});
+  const [verUrl, setVerUrl] = useState<string | null>(null); // null = seguir en vivo
+  const [verViewport, setVerViewport] = useState<string | null>(null);
+  const [verCaptura, setVerCaptura] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -29,10 +38,24 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
     return () => abortRef.current?.abort(); // closing the panel stops the agents
   }, []);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
+    endRef.current?.scrollIntoView({ block: "nearest" });
   }, [bubbles]);
 
   function push(e: AgentEvent) {
+    if (e.kind === "browser") {
+      const linea = `${e.viewport} · ${e.text}`;
+      setVivo((v) => ({ url: e.url!, viewport: e.viewport!, accion: e.text!, log: [linea, ...(v?.log ?? [])].slice(0, 8) }));
+      if (e.captura) {
+        setCapturas((c) => ({
+          ...c,
+          [e.url!]: { ...c[e.url!], [e.viewport!]: [...(c[e.url!]?.[e.viewport!] ?? []), e.captura!] },
+        }));
+      }
+      return; // los pasos del navegador van al visor, no al chat
+    }
+    if (e.agent === "extractor") {
+      setVivo((v) => v && { ...v, viewport: "todos", accion: "Navegación terminada · analizando con IA" });
+    }
     setBubbles((b) => {
       if (e.kind === "token" && b.length) {
         const last = b[b.length - 1];
@@ -48,6 +71,11 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
     abortRef.current = ctrl;
     setRunning(true);
     setBubbles([]);
+    setCapturas({});
+    setVivo(null);
+    setVerUrl(null);
+    setVerViewport(null);
+    setVerCaptura(null);
     try {
       const res = await fetch("/api/audit", {
         method: "POST",
@@ -88,6 +116,15 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
 
   const ready = status?.ollama && status.modeloListo;
 
+  // Qué muestra el visor: lo elegido a mano, o si no, lo último de la sesión en vivo.
+  const urlVisor = verUrl ?? vivo?.url ?? null;
+  const porViewport = urlVisor ? capturas[urlVisor] ?? {} : {};
+  const vpVivo = urlVisor === vivo?.url && vivo && porViewport[vivo.viewport] ? vivo.viewport : undefined;
+  const vpVisor = verViewport ?? vpVivo ?? Object.keys(porViewport).at(-1) ?? null;
+  const tiras = vpVisor ? porViewport[vpVisor] ?? [] : [];
+  const capturaVisor = verCaptura && tiras.includes(verCaptura) ? verCaptura : tiras[tiras.length - 1];
+  const siguiendo = !verUrl && !verViewport && !verCaptura;
+
   return (
     <div className="modal-overlay">
       <div className="modal agents">
@@ -123,10 +160,63 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
           </button>
         </div>
 
+        <div className="audit-grid">
+        <div className="visor">
+          {!urlVisor ? (
+            <p className="mini">
+              Acá vas a ver las capturas reales de la sesión del navegador mientras se audita cada URL,
+              en cada tamaño de pantalla.
+            </p>
+          ) : (
+            <>
+              <div className="visor-head">
+                <select
+                  value={urlVisor}
+                  onChange={(e) => { setVerUrl(e.target.value); setVerViewport(null); setVerCaptura(null); }}
+                >
+                  {Object.keys(capturas).map((u) => <option key={u} value={u}>{u.replace(/^https?:\/\//, "")}</option>)}
+                </select>
+                <select value={vpVisor ?? ""} onChange={(e) => { setVerViewport(e.target.value); setVerCaptura(null); }}>
+                  {Object.keys(porViewport).map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+                <button
+                  className={siguiendo ? "" : "secondary"}
+                  onClick={() => { setVerUrl(null); setVerViewport(null); setVerCaptura(null); }}
+                >
+                  {siguiendo ? "● En vivo" : "Volver a en vivo"}
+                </button>
+              </div>
+              {running && vivo && (
+                <p className="mini visor-accion">
+                  <strong>{vivo.viewport}</strong> · {vivo.accion}
+                </p>
+              )}
+              {capturaVisor && (
+                <a href={img(capturaVisor)} target="_blank" rel="noreferrer" title="Abrir en tamaño real">
+                  <img className="visor-img" src={img(capturaVisor)} alt={capturaVisor.split("/").pop()} />
+                </a>
+              )}
+              <div className="tiras">
+                {tiras.map((c) => (
+                  <img
+                    key={c}
+                    src={img(c)}
+                    alt={c.split("/").pop()}
+                    title={c.split("/").pop()}
+                    className={c === capturaVisor ? "activa" : ""}
+                    onClick={() => { setVerUrl(urlVisor); setVerViewport(vpVisor); setVerCaptura(c); }}
+                  />
+                ))}
+              </div>
+              {running && vivo && <pre className="visor-log">{vivo.log.join("\n")}</pre>}
+            </>
+          )}
+        </div>
+
         <div className="chat">
           {!bubbles.length && (
             <p className="mini">
-              Extractor → Analista (IA 1) ⇄ Revisor (IA 2) → Soluciones. Las reglas y prompts se editan en{" "}
+              Navegador (Playwright) → Extractor → Analista (IA 1) ⇄ Revisor (IA 2) → Soluciones. Las reglas y prompts se editan en{" "}
               <code>{status?.workspace ?? "…"}</code>
             </p>
           )}
@@ -140,6 +230,7 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
             );
           })}
           <div ref={endRef} />
+        </div>
         </div>
 
         <div className="modal-controls">

@@ -16,6 +16,7 @@
     "electron-builder": "^26.15.3",
     "next": "16.4.0",
     "playwright": "^1.56.0",
+    "playwright-core": "^1.56.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "typescript": "^5"

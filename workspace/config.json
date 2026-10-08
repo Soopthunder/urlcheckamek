@@ -1,5 +1,15 @@
 {
   "modelo": "qwen2.5:14b",
   "rondasDebate": 2,
-  "contexto": 16384
+  "contexto": 16384,
+  "viewports": [
+    { "ancho": 1366, "alto": 768 },
+    { "ancho": 1920, "alto": 1080 },
+    { "ancho": 768, "alto": 1024, "movil": true },
+    { "ancho": 390, "alto": 844, "movil": true },
+    { "ancho": 360, "alto": 800, "movil": true }
+  ],
+  "timeoutNavegacionMs": 30000,
+  "maxCapturasPorViewport": 8,
+  "maxAlturaScroll": 15000
 }

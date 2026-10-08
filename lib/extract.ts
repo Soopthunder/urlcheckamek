@@ -1,9 +1,9 @@
 // Fase 1 (Extracción): datos duros de una URL, sacados con código y no con el LLM.
 // El Analista solo puede razonar sobre esto — es lo que hace cumplir "No Inventar".
+// Con navegador, el HTML llega ya renderizado por Playwright (lib/browser.ts); sin
+// navegador, se descarga crudo con fetch.
 //
-// ponytail: regex sobre el HTML crudo, sin cheerio ni browser. Alcanza para
-// etiquetas SEO, trackers y estructura. Ceiling: sitios 100% renderizados con JS
-// devuelven un HTML casi vacío — si aparecen, usar Playwright (ya instalado) acá.
+// ponytail: regex sobre el HTML, sin cheerio. Alcanza para etiquetas SEO, trackers y estructura.
 
 const TRACKERS: Record<string, RegExp> = {
   GA4: /gtag\/js\?id=G-|['"]G-[A-Z0-9]{6,}['"]/,
@@ -29,6 +29,63 @@ const attr = (tag: string | undefined, name: string) => {
 const meta = (html: string, name: string) =>
   attr(html.match(new RegExp(`<meta[^>]+(?:name|property)=["']${name}["'][^>]*>`, "i"))?.[0], "content");
 
+export type Pagina = {
+  url: string;
+  urlFinal: string;
+  redireccionado: boolean;
+  status: number;
+  ms: number;
+  html: string;
+  xRobotsTag: string | null;
+};
+
+export function factsFromHtml(p: Pagina) {
+  const { html } = p;
+  const host = new URL(p.urlFinal).host;
+  const hrefs = all(html, /<a\b[^>]*\bhref=["']([^"'#]+)/gi).map((m) => m[1]);
+  const internos = hrefs.filter((h) => {
+    try { return new URL(h, p.urlFinal).host === host; } catch { return false; }
+  }).length;
+  const imgs = all(html, /<img\b[^>]*>/gi).map((m) => m[0]);
+  const visible = text(html.replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, " "));
+
+  return {
+    url: p.url,
+    urlFinal: p.urlFinal,
+    redireccionado: p.redireccionado,
+    status: p.status,
+    tiempoRespuestaMs: p.ms,
+    pesoHtmlKb: Math.round(html.length / 1024),
+    xRobotsTag: p.xRobotsTag,
+    idioma: attr(html.match(/<html\b[^>]*>/i)?.[0], "lang"),
+    title: text(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") || null,
+    metaDescription: meta(html, "description"),
+    metaRobots: meta(html, "robots"),
+    viewport: meta(html, "viewport"),
+    canonical: attr(html.match(/<link[^>]+rel=["']canonical["'][^>]*>/i)?.[0], "href"),
+    hreflang: all(html, /<link[^>]+hreflang=["']([^"']+)/gi).map((m) => m[1]),
+    ogTitle: meta(html, "og:title"),
+    ogImage: meta(html, "og:image"),
+    h1: all(html, /<h1[^>]*>([\s\S]*?)<\/h1>/gi).map((m) => text(m[1])),
+    h2: all(html, /<h2[^>]*>([\s\S]*?)<\/h2>/gi).map((m) => text(m[1])).slice(0, 15),
+    imagenes: imgs.length,
+    imagenesSinAltOAltVacio: imgs.filter((t) => !attr(t, "alt")).length,
+    enlacesInternos: internos,
+    enlacesExternos: hrefs.length - internos,
+    bloquesJsonLd: all(html, /<script[^>]+application\/ld\+json/gi).length,
+    recursosHttpEnPaginaHttps: p.urlFinal.startsWith("https:") ? all(html, /\bsrc=["']http:\/\//gi).length : 0,
+    palabrasVisibles: visible ? visible.split(" ").length : 0,
+    trackersDetectados: Object.keys(TRACKERS).filter((k) => TRACKERS[k].test(html)),
+  };
+}
+
+export const accessError = (url: string, err: unknown, ms: number) => ({
+  url,
+  errorDeAcceso: err instanceof Error ? err.message : String(err),
+  tiempoRespuestaMs: ms,
+});
+
+// Descarga directa sin navegador: respaldo si no hay Edge/Chrome disponible.
 export async function extractFacts(url: string) {
   const start = Date.now();
   try {
@@ -37,55 +94,22 @@ export async function extractFacts(url: string) {
       signal: AbortSignal.timeout(20000),
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SiteCheck-Auditor" },
     });
-    const html = await res.text();
-    const ms = Date.now() - start;
-    const host = new URL(res.url).host;
-    const hrefs = all(html, /<a\b[^>]*\bhref=["']([^"'#]+)/gi).map((m) => m[1]);
-    const internos = hrefs.filter((h) => {
-      try { return new URL(h, res.url).host === host; } catch { return false; }
-    }).length;
-    const imgs = all(html, /<img\b[^>]*>/gi).map((m) => m[0]);
-    const visible = text(html.replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, " "));
-
-    return {
+    return factsFromHtml({
       url,
       urlFinal: res.url,
       redireccionado: res.redirected,
       status: res.status,
-      tiempoRespuestaMs: ms,
-      pesoHtmlKb: Math.round(html.length / 1024),
+      ms: Date.now() - start,
+      html: await res.text(),
       xRobotsTag: res.headers.get("x-robots-tag"),
-      idioma: attr(html.match(/<html\b[^>]*>/i)?.[0], "lang"),
-      title: text(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") || null,
-      metaDescription: meta(html, "description"),
-      metaRobots: meta(html, "robots"),
-      viewport: meta(html, "viewport"),
-      canonical: attr(html.match(/<link[^>]+rel=["']canonical["'][^>]*>/i)?.[0], "href"),
-      hreflang: all(html, /<link[^>]+hreflang=["']([^"']+)/gi).map((m) => m[1]),
-      ogTitle: meta(html, "og:title"),
-      ogImage: meta(html, "og:image"),
-      h1: all(html, /<h1[^>]*>([\s\S]*?)<\/h1>/gi).map((m) => text(m[1])),
-      h2: all(html, /<h2[^>]*>([\s\S]*?)<\/h2>/gi).map((m) => text(m[1])).slice(0, 15),
-      imagenes: imgs.length,
-      imagenesSinAltOAltVacio: imgs.filter((t) => !attr(t, "alt")).length,
-      enlacesInternos: internos,
-      enlacesExternos: hrefs.length - internos,
-      bloquesJsonLd: all(html, /<script[^>]+application\/ld\+json/gi).length,
-      recursosHttpEnPaginaHttps: res.url.startsWith("https:") ? all(html, /\bsrc=["']http:\/\//gi).length : 0,
-      palabrasVisibles: visible ? visible.split(" ").length : 0,
-      trackersDetectados: Object.keys(TRACKERS).filter((k) => TRACKERS[k].test(html)),
-    };
+    });
   } catch (err) {
-    return {
-      url,
-      errorDeAcceso: err instanceof Error ? err.message : String(err),
-      tiempoRespuestaMs: Date.now() - start,
-    };
+    return accessError(url, err, Date.now() - start);
   }
 }
 
 export type Senal = { prioridad: "Crítica" | "Alta" | "Media" | "Baja"; area: string; problema: string; evidencia: string };
-type Facts = Awaited<ReturnType<typeof extractFacts>>;
+export type Facts = ReturnType<typeof factsFromHtml> | ReturnType<typeof accessError>;
 
 // Las reglas medibles de contexto/criterios_prioridad.md, evaluadas con código.
 // Un 7B se equivoca comparando números ("103 caracteres no supera 60"); esto no.
