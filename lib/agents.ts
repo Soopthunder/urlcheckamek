@@ -1,9 +1,10 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { extractFacts, factsFromHtml, accessError, senales, Senal, Facts } from "./extract";
-import { abrirNavegador, auditarViewport, recapturar, nombreViewport, Viewport, Limites, ResultadoViewport, Seccion, ZONAS_VALIDAS } from "./browser";
+import { abrirNavegador, auditarViewport, recapturar, leerVersion, nombreViewport, Viewport, Limites, ResultadoViewport, Seccion, ZONAS_VALIDAS } from "./browser";
 import { revisarTexto } from "./language";
-import { Hallazgo, Descartado, Prioridad, agrupar, ordenar, prefijo, existeLiteral, norm, renderMd } from "./findings";
+import { Hallazgo, Descartado, Prioridad, agrupar, ordenar, prefijo, existeLiteral, norm, renderMd, resumenPorCategoria } from "./findings";
+import { buscarEquivalente, esReciproca, datosClave, compararDatos, normalizarUrl, Dato } from "./translation";
 import { getReport } from "./store";
 
 // Carpeta editable por el usuario: AGENTS.md, contexto/, skills/, memoria/, proyectos/.
@@ -298,6 +299,40 @@ export async function estadoVision(modelo: string): Promise<{ disponible: boolea
 
 const comoBase64 = async (rel: string) => (await fs.readFile(path.join(PROYECTOS, rel))).toString("base64");
 
+const SCHEMA_TRADUCCION = {
+  type: "object",
+  properties: {
+    problemas: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          seccion: { type: "string" },
+          textoOrigen: { type: "string" },
+          textoDestino: { type: "string" },
+          idiomaConProblema: { type: "string", enum: ["es", "en"] },
+          tipo: {
+            type: "string",
+            enum: ["significado distinto", "sin traducir", "traducción incompleta", "dato distinto", "llamado a la acción distinto",
+              "terminología inconsistente", "traducción literal o poco natural"],
+          },
+          gravedad: { type: "string", enum: ["error", "sugerencia"] },
+          motivo: { type: "string" },
+          correccion: { type: "string" },
+        },
+        required: ["seccion", "textoOrigen", "textoDestino", "idiomaConProblema", "tipo", "gravedad", "motivo", "correccion"],
+      },
+    },
+  },
+  required: ["problemas"],
+};
+type TradOut = {
+  problemas: {
+    seccion: string; textoOrigen: string; textoDestino: string; idiomaConProblema: string;
+    tipo: string; gravedad: "error" | "sugerencia"; motivo: string; correccion: string;
+  }[];
+};
+
 type AnalistaOut = { hallazgos: { categoria: string; prioridad: Prioridad; descripcion: string; evidencia: string; recomendacion: string }[] };
 type LingOut = { errores: { bloque: string; original: string; correccion: string; idioma: string; tipo: string; gravedad: "error" | "sugerencia"; motivo: string }[] };
 type RevisorOut = { decisiones: { id: string; verificacion: string; decision: "aprobar" | "descartar" | "corregir" | "recapturar"; prioridad: Prioridad; motivo: string }[] };
@@ -388,12 +423,13 @@ function evidenciaMd(rs: ResultadoViewport[]) {
 // Navegador -> hallazgos medidos (código) -> Analista (IA 1) ⇄ Revisor (IA 2) -> Soluciones.
 export async function runAudit(urls: string[], project: string, emit: Emit, signal: AbortSignal) {
   const cfg = await getConfig();
-  const [sysAnalista, sysLing, sysRevisor, sysSoluciones, sysVisual] = await Promise.all([
+  const [sysAnalista, sysLing, sysRevisor, sysSoluciones, sysVisual, sysTrad] = await Promise.all([
     systemPrompt("02_analisis_ia1.md"),
     systemPrompt("02_linguistica_ia1.md"),
     systemPrompt("03_validacion_ia2.md"),
     systemPrompt("04_soluciones.md"),
     systemPrompt("05_inspector_visual.md"),
+    systemPrompt("06_traduccion_ia1.md"),
   ]);
   const stamp = new Date().toISOString().slice(0, 16).replace(/:/g, "-");
   const relCorrida = `${slug(project)}/${stamp}`;
@@ -420,6 +456,8 @@ export async function runAudit(urls: string[], project: string, emit: Emit, sign
   let secuencia = 0;
   const hallazgos: Hallazgo[] = [];
   const descartados: Descartado[] = [];
+  const comparaciones: string[] = []; // resultado de la comparación de idiomas por URL (va al reporte)
+  const comparadas = new Set<string>(); // URLs ya comparadas: si se auditan ES y EN, no se compara dos veces
   const publicar = (hs: Omit<Hallazgo, "id">[]) => {
     for (const h of hs) {
       const conId = { ...h, id: `${prefijo(h.url)}-${String(++secuencia).padStart(3, "0")}` };
@@ -669,6 +707,126 @@ export async function runAudit(urls: string[], project: string, emit: Emit, sign
       }
       if (omitidos) emit({ agent: "sistema", kind: "info", text: `${omitidos} bloque(s) de texto no se revisaron por el límite maxBloquesTexto (${cfg.maxBloquesTexto}).` });
 
+      // 3c. Comparación con la versión en el otro idioma ------------------------------
+      // La página equivalente sale de enlaces declarados (hreflang o selector), nunca del
+      // parecido de la URL; si no hay evidencia, el reporte dice que no se comparó y por qué.
+      if (browser && p && (idioma === "es" || idioma === "en") && !comparadas.has(normalizarUrl(p.urlFinal))) {
+        const destino = idioma === "es" ? "en" : "es";
+        const nombre: Record<string, string> = { es: "español", en: "inglés" };
+        const eq = buscarEquivalente(p.urlFinal, p.alternativas, destino);
+        if (!eq) {
+          comparaciones.push(`- ${url}: **comparación no realizada** — la página no declara una versión en ${nombre[destino]} (ni hreflang ni selector de idioma).`);
+        } else {
+          const vpP = cfg.viewports.find((v) => nombreViewport(v) === p.viewport)!;
+          const otra = await leerVersion(browser, eq.url, vpP, cfg, path.join(PROYECTOS, relCapturas), relCapturas, paso);
+          if ("error" in otra) {
+            comparaciones.push(`- ${url}: **comparación no realizada** — no se pudo abrir ${eq.url} (${otra.error}).`);
+          } else if (otra.idioma !== destino) {
+            comparaciones.push(`- ${url}: **comparación no realizada** — ${eq.url} (encontrada vía ${eq.via}) declara idioma "${otra.idioma ?? "ninguno"}", no "${destino}": no hay evidencia de que sea la traducción.`);
+          } else {
+            comparadas.add(normalizarUrl(p.urlFinal));
+            comparadas.add(normalizarUrl(otra.urlFinal));
+            const reciproca = esReciproca(p.urlFinal, otra.alternativas);
+            comparaciones.push(
+              `- ${url} ↔ ${otra.urlFinal}: equivalencia **${reciproca ? "confirmada" : "probable"}** ` +
+                `(${reciproca ? "las dos páginas se enlazan entre sí" : "solo esta página apunta a la otra, no al revés"}), encontrada vía ${eq.via}.`
+            );
+            const A = idioma.toUpperCase(), B = destino.toUpperCase();
+            const textoA = p.secciones.map((s) => `${s.titulo}\n${s.texto}`).join("\n\n");
+            const textoB = otra.secciones.map((s) => `${s.titulo}\n${s.texto}`).join("\n\n");
+
+            // Datos clave por código (precios, horarios, %, teléfonos, emails).
+            const trad: Omit<Hallazgo, "id">[] = [];
+            const cita = (ds: Dato[]) => ds.map((d) => `«${d.texto}» (${d.seccion})`).join(", ");
+            for (const d of compararDatos(datosClave(p.secciones), datosClave(otra.secciones))) {
+              trad.push({
+                url, categoria: "Traducción", prioridad: d.tipo === "precio" || d.tipo === "horario" ? "Alta" : "Media",
+                estado: reciproca ? "confirmado" : "requiere revisión manual", origen: "medido", viewports: [p.viewport], idioma,
+                descripcion: d.soloEnA.length && d.soloEnB.length
+                  ? `${d.tipo} distinto entre versiones: ${A} ${cita(d.soloEnA)} / ${B} ${cita(d.soloEnB)}`
+                  : d.soloEnA.length
+                    ? `${d.tipo} de la versión ${A} que no aparece en la versión ${B}: ${cita(d.soloEnA)}`
+                    : `${d.tipo} que aparece solo en la versión ${B}: ${cita(d.soloEnB)}`,
+                evidencia: {
+                  texto: d.soloEnA.map((x) => x.texto).join(" · ") || undefined,
+                  medicion: `comparación de datos ${A}↔${B} entre ${url} y ${otra.urlFinal}`,
+                  capturas: [otra.captura],
+                },
+                textoOtroIdioma: d.soloEnB.map((x) => x.texto).join(" · ") || undefined,
+                pasos: [`Abrir ${url}`, `Abrir ${otra.urlFinal}`, `Comparar los datos de tipo ${d.tipo} de las dos versiones`],
+                recomendacion: "Unificar el dato en las dos versiones (confirmar primero cuál es el correcto)",
+                regla: `trad:${d.tipo}`,
+              });
+            }
+            // Bloques sin traducir en la otra versión (texto en el idioma equivocado).
+            for (const t of revisarTexto(otra.secciones, destino).filter((x) => x.regla === "mezcla-de-idiomas")) {
+              trad.push({
+                url: otra.urlFinal, categoria: "Traducción", prioridad: "Alta", estado: t.estado, origen: "medido", viewports: [p.viewport],
+                idioma: t.idioma, descripcion: `Sin traducir en la versión ${B}: ${t.descripcion}`, ubicacion: t.seccion.selector,
+                evidencia: { texto: t.texto, capturas: [otra.captura] }, pasos: [`Abrir ${otra.urlFinal}`, `Ir a la sección "${t.seccion.titulo}"`],
+                recomendacion: `Traducir el bloque al ${nombre[destino]}`, regla: `trad:sin-traducir:${norm(t.seccion.titulo)}`,
+              });
+            }
+            publicar(ordenar(agrupar(trad)));
+
+            // Significado, CTAs y terminología por IA, con verificación literal en las dos versiones.
+            const tr = await chatJson<TradOut>(
+              "analista", `Comparación de significado ${A} ↔ ${B}:`,
+              [
+                { role: "system", content: sysTrad },
+                {
+                  role: "user",
+                  content:
+                    `Datos que el código ya comparó (NO los repitas):\n${trad.map((h) => `- ${h.descripcion}`).join("\n") || "(ninguno)"}\n\n` +
+                    `## Versión ${A} (${url})\n${delimitar(textoA.slice(0, 5000))}\n\n## Versión ${B} (${otra.urlFinal})\n${delimitar(textoB.slice(0, 5000))}`,
+                },
+              ],
+              SCHEMA_TRADUCCION,
+              (o) => o.problemas.map((e) => `- [${e.tipo}, ${e.gravedad}] «${e.textoOrigen}» ↔ «${e.textoDestino || "—"}»: ${e.motivo}`).join("\n"),
+              emit, signal
+            );
+            for (const e of tr.problemas) {
+              const enA = existeLiteral(e.textoOrigen, textoA);
+              const enB = !e.textoDestino || existeLiteral(e.textoDestino, textoB);
+              if (!enA || !enB) {
+                descartados.push({ url, descripcion: `«${e.textoOrigen}» ↔ «${e.textoDestino}»`, origen: "ia-texto", motivo: `la cita no existe en la versión ${!enA ? A : B} (descartado por código)` });
+                continue;
+              }
+              // La IA repite lo que el código ya comparó (horario, precio, bloque sin traducir)
+              // aunque se le pase la lista: si cita un dato o bloque ya medido, la medición manda.
+              const solapa = (cita: string, medido?: string) =>
+                !!cita && !!medido && medido.split(" · ").some((m) =>
+                  norm(cita).includes(norm(m).slice(0, 40)) || (norm(cita).length >= 8 && norm(m).includes(norm(cita).slice(0, 40))));
+              // un bloque sin traducir solo "repite" otro reclamo de sin traducir: un botón distinto
+              // dentro de ese bloque es otro problema
+              const esSinTraducir = e.tipo === "sin traducir" || e.tipo === "traducción incompleta";
+              const repetido = [...trad, ...medidos.filter((m) => m.regla === "mezcla-de-idiomas")]
+                .filter((h) => esSinTraducir || !(h.regla === "mezcla-de-idiomas" || h.regla?.startsWith("trad:sin-traducir")))
+                .find((h) => [e.textoOrigen, e.textoDestino].some((c) => solapa(c, h.evidencia.texto) || solapa(c, h.textoOtroIdioma)));
+              if (repetido) {
+                descartados.push({ url, descripcion: `«${e.textoOrigen}» ↔ «${e.textoDestino}»`, origen: "ia-texto", motivo: `repite una comparación del código (${repetido.descripcion.slice(0, 80)}) (descartado por código)` });
+                continue;
+              }
+              candidatos.push({
+                tmp: `T${candidatos.length + 1}`, tipo: "linguistica",
+                base: {
+                  url, categoria: "Traducción",
+                  prioridad: e.gravedad === "error" ? (e.tipo === "dato distinto" || e.tipo === "llamado a la acción distinto" ? "Alta" : "Media") : "Baja",
+                  estado: e.gravedad === "error" && reciproca ? "confirmado" : "probable", origen: "ia-texto", viewports: ["todos"],
+                  idioma: e.idiomaConProblema, descripcion: `${e.tipo}: ${e.motivo}`, ubicacion: e.seccion,
+                  evidencia: { texto: e.textoOrigen, medicion: `comparación ${A}↔${B} con ${otra.urlFinal}`, capturas: [otra.captura] },
+                  textoOtroIdioma: e.textoDestino || "(no aparece en la otra versión)",
+                  correccion: e.correccion || undefined,
+                  pasos: [`Abrir ${url} y ${otra.urlFinal}`, `Comparar la sección "${e.seccion}"`],
+                  recomendacion: e.correccion ? `Corregir la versión ${e.idiomaConProblema.toUpperCase()}: «${e.correccion}»` : "Revisar la traducción de este fragmento",
+                  regla: `trad:${norm(e.textoOrigen)}`,
+                },
+              });
+            }
+          }
+        }
+      }
+
       // 4. Revisor (IA 2): decide hallazgo por hallazgo; puede devolverlos al Analista --
       let pendientes = candidatos;
       let recapturas = 0;
@@ -717,7 +875,7 @@ export async function runAudit(urls: string[], project: string, emit: Emit, sign
         const lista = pendientes.map((c) => ({
           id: c.tmp, tipo: c.tipo, categoria: c.base.categoria, prioridad: c.base.prioridad, descripcion: c.base.descripcion,
           ubicacion: c.base.ubicacion,
-          evidencia: c.base.evidencia.texto ?? c.base.evidencia.medicion, correccion: c.base.correccion, defensaDelAnalista: c.argumento,
+          evidencia: c.base.evidencia.texto ?? c.base.evidencia.medicion, textoEnLaOtraVersion: c.base.textoOtroIdioma, correccion: c.base.correccion, defensaDelAnalista: c.argumento,
         }));
         const rev = await chatJson<RevisorOut>(
           "revisor", `Validación de ${pendientes.length} hallazgo(s) de IA (ronda ${ronda}/${cfg.rondasDebate}):`,
@@ -814,11 +972,13 @@ export async function runAudit(urls: string[], project: string, emit: Emit, sign
     ], emit, signal);
 
     const file = path.join(dirCorrida, "reporte_final_priorizado.md");
-    await fs.writeFile(path.join(dirCorrida, "hallazgos.json"), JSON.stringify({ urls, hallazgos: ordenados, descartados }, null, 2));
+    await fs.writeFile(path.join(dirCorrida, "hallazgos.json"), JSON.stringify({ urls, comparacionDeIdiomas: comparaciones, hallazgos: ordenados, descartados }, null, 2));
     await fs.writeFile(
       file,
       `# Reporte de auditoría — ${project}\n\n_${new Date().toLocaleString("es-AR", { hour12: false })} · ${cfg.modelo}_\n\nURLs: ${urls.join(", ")}\n\n` +
-        `${resumen}\n\n---\n\n## Hallazgos (${ordenados.length})\n\n` +
+        `${resumen}\n\n---\n\n## Resumen por categoría\n\n${resumenPorCategoria(ordenados)}\n` +
+        `## Comparación de idiomas\n\n${comparaciones.join("\n") || "- No se comparó ninguna página (sin navegador o idioma de la página desconocido)."}\n\n` +
+        `## Hallazgos (${ordenados.length})\n\n` +
         "Estado: **confirmado** = medido por código o verificado contra el texto literal · **probable** = inferido por IA · " +
         "**requiere revisión manual** = la evidencia no alcanza para decidir.\n\n" +
         renderMd(ordenados, "../../") +

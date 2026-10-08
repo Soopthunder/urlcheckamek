@@ -18,6 +18,7 @@ export type Hallazgo = {
   ubicacion?: string;
   evidencia: { capturas?: string[]; texto?: string; medicion?: string };
   correccion?: string; // errores lingüísticos: el texto corregido
+  textoOtroIdioma?: string; // traducción: el fragmento equivalente en la otra versión
   pasos: string[];
   recomendacion: string;
   regla?: string; // clave interna para agrupar el mismo problema entre viewports
@@ -84,6 +85,7 @@ export function renderMd(hs: Hallazgo[], base: string): string {
         h.ubicacion ? `- **Ubicación**: \`${h.ubicacion}\`` : "",
         h.evidencia.texto ? `- **Texto original**: «${h.evidencia.texto}»` : "",
         h.correccion ? `- **Corrección propuesta**: «${h.correccion}»` : "",
+        h.textoOtroIdioma ? `- **Texto en la otra versión**: «${h.textoOtroIdioma}»` : "",
         h.evidencia.medicion ? `- **Medición**: ${h.evidencia.medicion}` : "",
         h.evidencia.capturas?.length
           ? `- **Capturas**: ${h.evidencia.capturas.map((c) => `[${c.split("/").pop()}](${base}${c})`).join(" · ")}`
@@ -95,4 +97,15 @@ export function renderMd(hs: Hallazgo[], base: string): string {
     })
     .join("\n\n");
   return `${tabla}\n\n${fichas}\n`;
+}
+
+// Cuántos hallazgos hay por categoría y prioridad (primera tabla del reporte unificado).
+export function resumenPorCategoria(hs: Hallazgo[]): string {
+  const cats = [...new Set(hs.map((h) => h.categoria))].sort();
+  const prios: Prioridad[] = ["Crítica", "Alta", "Media", "Baja"];
+  const fila = (c: string) => {
+    const de = hs.filter((h) => h.categoria === c);
+    return `| ${c} | ${prios.map((p) => de.filter((h) => h.prioridad === p).length || "").join(" | ")} | ${de.length} | ${de.filter((h) => h.estado === "confirmado").length} |`;
+  };
+  return "| Categoría | Crítica | Alta | Media | Baja | Total | Confirmados |\n|---|---|---|---|---|---|---|\n" + cats.map(fila).join("\n") + "\n";
 }

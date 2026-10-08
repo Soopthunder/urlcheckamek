@@ -276,6 +276,7 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
                         «{h.evidencia.texto}»{h.correccion && <> → <strong>«{h.correccion}»</strong></>}
                       </div>
                     )}
+                    {h.textoOtroIdioma && <div className="cita">otra versión: «{h.textoOtroIdioma}»</div>}
                     {h.evidencia.medicion && <div className="mini">{h.evidencia.medicion}</div>}
                     {h.ubicacion && <code className="mini">{h.ubicacion}</code>}
                     {captura && <div className="mini ver">📷 ver evidencia ({h.evidencia.capturas!.length})</div>}

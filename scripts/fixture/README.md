@@ -19,3 +19,17 @@ SiteCheck. Lo que la auditoría tiene que encontrar:
 | Bloque "Our Spa" en inglés | mezcla-de-idiomas |
 | Texto gris claro sobre blanco en "Horarios" | contraste-insuficiente (medido por código, WCAG) |
 | "habitasiones", "incluído", "reservacion" | errores lingüísticos (IA, verificados contra el texto) |
+
+## Comparación español ↔ inglés
+
+`/` (ES) y `/en/` (EN) se enlazan entre sí por hreflang y por el selector de idioma
+(equivalencia confirmada). `/sin-traduccion.html` no declara versión en inglés.
+
+| Error plantado | Tipo esperado |
+|---|---|
+| Check-in "14 hs" (ES) ↔ "3 pm" (EN) | horario distinto (código) |
+| "$ 45.000 por noche" (ES) ↔ "Rates available on request" (EN) | precio que falta en EN (código) |
+| Sección "Spa" en español dentro de la página EN | sin traducir (código) |
+| "desayuno incluído" ↔ "breakfast is not included" | significado distinto (IA, verificado contra las dos versiones) |
+| "Reservar ahora" ↔ "Request information" | llamado a la acción distinto (IA) |
+| `/sin-traduccion.html` | "comparación no realizada" con el motivo |

@@ -24,11 +24,39 @@ function freePort() {
   });
 }
 
+// The agents' folder is user-editable, so it is never blindly overwritten:
+// - first run: copy the template.
+// - new app version: back up the whole folder, then refresh the instructions (AGENTS.md,
+//   contexto/, skills/) that the new pipeline depends on; memory, projects and the user's
+//   config are kept (config only gains the new keys).
+// ponytail: an edited prompt is replaced on upgrade (it stays in the backup). Merge per file
+// if users start customizing prompts heavily.
+function prepararWorkspace(plantilla, workspace, dataDir) {
+  const marca = path.join(workspace, ".version");
+  const version = app.getVersion();
+  if (!fs.existsSync(workspace)) {
+    fs.cpSync(plantilla, workspace, { recursive: true });
+  } else if ((fs.existsSync(marca) ? fs.readFileSync(marca, "utf8").trim() : "") !== version) {
+    const respaldo = path.join(dataDir, `workspace-respaldo-${new Date().toISOString().slice(0, 16).replace(/:/g, "-")}`);
+    fs.cpSync(workspace, respaldo, { recursive: true, filter: (src) => !src.includes(`${path.sep}proyectos${path.sep}`) });
+    for (const p of ["AGENTS.md", "contexto", "skills"]) {
+      fs.cpSync(path.join(plantilla, p), path.join(workspace, p), { recursive: true, force: true });
+    }
+    // solo lo que falte (el instalador no trae proyectos/: se crea al auditar)
+    const memoria = path.join(plantilla, "memoria");
+    if (fs.existsSync(memoria)) fs.cpSync(memoria, path.join(workspace, "memoria"), { recursive: true, force: false });
+    const leer = (f) => JSON.parse(fs.readFileSync(f, "utf8"));
+    const cfg = path.join(workspace, "config.json");
+    const nuevo = { ...leer(path.join(plantilla, "config.json")), ...(fs.existsSync(cfg) ? leer(cfg) : {}) };
+    fs.writeFileSync(cfg, JSON.stringify(nuevo, null, 2) + "\n");
+  }
+  fs.writeFileSync(marca, version);
+}
+
 async function startServer() {
   const dataDir = app.getPath("userData"); // %APPDATA%/SiteCheck
   const workspace = path.join(dataDir, "workspace");
-  // first run: copy the agent templates where the user can edit them; never overwrite edits
-  if (!fs.existsSync(workspace)) fs.cpSync(path.join(root, "workspace"), workspace, { recursive: true });
+  prepararWorkspace(path.join(root, "workspace"), workspace, dataDir);
 
   const port = await freePort();
   Object.assign(process.env, {

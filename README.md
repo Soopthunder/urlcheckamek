@@ -69,8 +69,21 @@ Navegador (Playwright) → Extractor (código) → Analista · IA 1 ⇄ Revisor 
   tamaño, captura la zona ampliada al doble de resolución y el Inspector verifica si el
   problema se ve: solo así un hallazgo visual pasa a **confirmado** (máximo
   `maxRecapturasPorUrl` por URL).
+- **Comparación español ↔ inglés**: para cada URL en español o inglés busca su versión en
+  el otro idioma **solo por evidencia** (hreflang o el selector de idioma de la página, y
+  que la otra página declare el idioma correcto); nunca por el parecido de la URL. Si las
+  dos se enlazan entre sí, la equivalencia es "confirmada"; si no hay evidencia, el
+  reporte dice "comparación no realizada" y por qué. El código compara precios,
+  horarios (14 hs = 2 pm), porcentajes, teléfonos y emails, y detecta bloques sin
+  traducir; la IA compara significado, llamados a la acción y terminología, con las
+  citas verificadas literalmente en las dos versiones. Cada hallazgo muestra el texto
+  original, el de la otra versión y la corrección.
 - **Soluciones**: escribe el resumen ejecutivo y el plan de acción citando IDs. La tabla
   de hallazgos, la evidencia y los conteos los arma el código.
+
+El reporte unificado arranca con el resumen ejecutivo, una tabla de hallazgos por
+categoría (SEO, SEM, Técnica, Contenido/UX, Responsive, Visual, Navegación, Lingüística,
+Traducción) y prioridad, y el resultado de la comparación de idiomas de cada URL.
 
 Cada hallazgo tiene ID, categoría, prioridad, **estado** (confirmado = medido o verificado
 contra el texto · probable = inferido por IA · requiere revisión manual), **origen**
@@ -82,7 +95,10 @@ su captura. El reporte queda en `workspace\proyectos\<proyecto>\<fecha>\` como
 descartó y por qué.
 
 Página de prueba con errores plantados: `node scripts/fixture-server.mjs` y auditar
-`http://127.0.0.1:8099/` (detalle en `scripts/fixture/README.md`).
+`http://127.0.0.1:8099/` (tiene versión en inglés en `/en/`) y
+`http://127.0.0.1:8099/sin-traduccion.html` (detalle en `scripts/fixture/README.md`).
+Chequeos de la lógica sin navegador: `node scripts/check-findings.mjs` y
+`node scripts/check-translation.mjs`.
 
 Todo el comportamiento se edita en la carpeta `workspace` (botón "Abrir carpeta
 de agentes"), sin reinstalar:

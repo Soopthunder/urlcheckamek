@@ -39,6 +39,8 @@ export type ResultadoViewport = {
   html: string;
   secciones: Seccion[];
   mediciones: MedicionConEvidencia[];
+  idioma: string | null;
+  alternativas: Alternativas;
 };
 
 const MOBILE_UA =
@@ -163,7 +165,7 @@ export async function auditarViewport(
   const r: ResultadoViewport = {
     viewport, movil: !!vp.movil, estado: "ok", status: null, urlFinal: url, redireccionado: false, ms: 0,
     xRobotsTag: null, alturaPagina: 0, capturas: [], interacciones: [], problemas: [], pedidosBloqueados: 0,
-    html: "", secciones: [], mediciones: [],
+    html: "", secciones: [], mediciones: [], idioma: null, alternativas: { hreflang: [], selector: [] },
   };
   await fs.mkdir(dirCapturas, { recursive: true });
 
@@ -294,6 +296,7 @@ export async function auditarViewport(
     paso({ accion: "Extrayendo texto renderizado", viewport });
     r.secciones = await textoPorSecciones(page);
     r.html = await page.content();
+    ({ idioma: r.idioma, alternativas: r.alternativas } = await enlacesDeIdioma(page));
 
     if (vp.movil) {
       paso({ accion: "Probando el menú móvil", viewport });
@@ -367,6 +370,70 @@ function bannerCookies(page: Page): Promise<string | null> {
 
 // Texto visible agrupado por encabezado (h1–h3), en orden de lectura. Funciona aunque el
 // sitio no use <section> (ej. Elementor arma todo con <div>).
+// Enlaces a otras versiones de idioma de la página: <link hreflang> y el selector de idioma
+// (enlaces "EN", "English", "Español"… o con atributo hreflang/lang). Es la evidencia para
+// decidir qué página es la traducción: nunca se deduce por el parecido de las URLs.
+export type Alternativas = {
+  hreflang: { idioma: string; url: string }[];
+  selector: { idioma: string; url: string; texto: string }[];
+};
+function enlacesDeIdioma(page: Page): Promise<{ idioma: string | null; alternativas: Alternativas }> {
+  return page.evaluate(() => {
+    const base = (l: string | null) => (l ?? "").slice(0, 2).toLowerCase();
+    const hreflang = [...document.querySelectorAll("link[rel~=alternate][hreflang]")]
+      .map((l) => ({ idioma: base(l.getAttribute("hreflang")), url: (l as HTMLLinkElement).href }))
+      .filter((x) => x.idioma.length === 2 && x.url);
+    const NOMBRES: Record<string, string> = { en: "en", eng: "en", english: "en", inglés: "en", ingles: "en", es: "es", esp: "es", español: "es", espanol: "es", spanish: "es" };
+    const selector = [...document.querySelectorAll("a[href]")]
+      .map((a) => {
+        const texto = (a.textContent ?? "").replace(/\s+/g, " ").trim();
+        const idioma = base(a.getAttribute("hreflang")) || base(a.getAttribute("lang")) || NOMBRES[texto.toLowerCase()] || "";
+        return { idioma, url: (a as HTMLAnchorElement).href, texto };
+      })
+      .filter((x) => (x.idioma === "es" || x.idioma === "en") && x.texto.length <= 12 && !x.url.startsWith("javascript:"));
+    return { idioma: base(document.documentElement.lang) || null, alternativas: { hreflang, selector } };
+  });
+}
+
+// Lee la versión en el otro idioma (un solo viewport, el de escritorio): texto por sección,
+// idioma declarado, sus propios enlaces de idioma (para comprobar la reciprocidad) y una
+// captura como evidencia. Misma sesión de solo lectura que el resto.
+export async function leerVersion(
+  browser: Browser, url: string, vp: Viewport, lim: Limites, dirCapturas: string, relCapturas: string,
+  paso: (p: PasoNavegador) => void
+): Promise<{ urlFinal: string; status: number | null; idioma: string | null; secciones: Seccion[]; alternativas: Alternativas; captura: string } | { error: string }> {
+  const viewport = nombreViewport(vp);
+  const ctx = await nuevoContexto(browser, vp, () => {});
+  try {
+    await fs.mkdir(dirCapturas, { recursive: true });
+    const page = await ctx.newPage();
+    paso({ accion: `Abriendo la versión en el otro idioma: ${url}`, viewport });
+    const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: lim.timeoutNavegacionMs });
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+    if (await bannerCookies(page)) {
+      await clic(page);
+      await page.waitForTimeout(800);
+    }
+    await page.evaluate(async (max) => {
+      for (let y = 0; y < Math.min(document.documentElement.scrollHeight, max); y += innerHeight * 0.8) {
+        scrollTo({ top: y, behavior: "instant" });
+        await new Promise((ok) => setTimeout(ok, 200));
+      }
+      scrollTo({ top: 0, behavior: "instant" });
+    }, lim.maxAlturaScroll);
+    const file = `${viewport}_otro-idioma.jpg`;
+    await page.screenshot({ path: path.join(dirCapturas, file), type: "jpeg", quality: 80 });
+    const captura = `${relCapturas}/${file}`;
+    paso({ accion: "Captura de la versión en el otro idioma", viewport, captura });
+    const { idioma, alternativas } = await enlacesDeIdioma(page);
+    return { urlFinal: page.url(), status: resp?.status() ?? null, idioma, secciones: await textoPorSecciones(page), alternativas, captura };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message.split("\n")[0] : String(err) };
+  } finally {
+    await ctx.close().catch(() => {});
+  }
+}
+
 function textoPorSecciones(page: Page): Promise<Seccion[]> {
   return page.evaluate(() => {
     const MAX_SECCION = 2000;
