@@ -220,3 +220,20 @@ th.sortable:hover .sort-ind { opacity: 1; }
 .tiras img.activa, .tiras img:hover { border-color: var(--accent); opacity: 1; }
 .visor-log { margin: 0; font: 11px/1.5 ui-monospace, Consolas, monospace; color: var(--muted); white-space: pre-wrap; }
 @media (max-width: 900px) { .audit-grid { grid-template-columns: 1fr; overflow: visible; } }
+
+/* ---- columna derecha: conversación / hallazgos ---- */
+.lado { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.lado .chat, .lista-hallazgos { flex: 1; min-height: 0; overflow-y: auto; }
+.pestanas { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pestanas label { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.lista-hallazgos { display: flex; flex-direction: column; gap: 8px; padding: 2px; }
+.hallazgo { border-left: 3px solid; background: var(--bg); border-radius: 6px; padding: 8px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.hallazgo.con-captura { cursor: pointer; }
+.hallazgo.con-captura:hover { outline: 1px solid var(--border); }
+.hallazgo .h-meta { font-size: 11px; color: var(--muted); }
+.hallazgo .h-id { float: right; font-family: ui-monospace, Consolas, monospace; }
+.hallazgo .estado { color: #e0a63c; }
+.hallazgo .estado.ok { color: var(--ok); }
+.hallazgo .cita { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: var(--panel); padding: 4px 6px; border-radius: 4px; }
+.hallazgo code { word-break: break-all; }
+.hallazgo .ver { color: var(--accent); }

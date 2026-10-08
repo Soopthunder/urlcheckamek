@@ -108,7 +108,7 @@ export async function extractFacts(url: string) {
   }
 }
 
-export type Senal = { prioridad: "Crítica" | "Alta" | "Media" | "Baja"; area: string; problema: string; evidencia: string };
+export type Senal = { prioridad: "Crítica" | "Alta" | "Media" | "Baja"; area: string; problema: string; evidencia: string; recomendacion: string };
 export type Facts = ReturnType<typeof factsFromHtml> | ReturnType<typeof accessError>;
 
 // Las reglas medibles de contexto/criterios_prioridad.md, evaluadas con código.
@@ -117,46 +117,46 @@ export type Facts = ReturnType<typeof factsFromHtml> | ReturnType<typeof accessE
 // ponytail: umbrales duplicados del .md a propósito — si cambiás uno, cambiá el otro.
 export function senales(f: Facts): Senal[] {
   const s: Senal[] = [];
-  const add = (prioridad: Senal["prioridad"], area: string, problema: string, evidencia: string) =>
-    s.push({ prioridad, area, problema, evidencia });
+  const add = (prioridad: Senal["prioridad"], area: string, problema: string, evidencia: string, recomendacion: string) =>
+    s.push({ prioridad, area, problema, evidencia, recomendacion });
 
   if ("errorDeAcceso" in f) {
-    add("Crítica", "Técnica", "Error de acceso: la URL no respondió", `errorDeAcceso = ${f.errorDeAcceso}`);
+    add("Crítica", "Técnica", "Error de acceso: la URL no respondió", `errorDeAcceso = ${f.errorDeAcceso}`, "Verificar que el sitio esté online y que no bloquee navegadores automatizados");
     return s;
   }
   const noindex = /noindex/i.test(`${f.metaRobots ?? ""} ${f.xRobotsTag ?? ""}`);
   const sinBarra = (u: string) => u.replace(/\/+$/, "");
 
-  if (f.status >= 500) add("Crítica", "Técnica", `Error del servidor HTTP ${f.status}`, `status = ${f.status}`);
-  else if (f.status >= 400) add("Crítica", "Técnica", `La página devuelve HTTP ${f.status}`, `status = ${f.status}`);
-  if (f.palabrasVisibles < 20) add("Crítica", "Técnica", "Página prácticamente en blanco", `palabrasVisibles = ${f.palabrasVisibles}`);
-  if (noindex) add("Crítica", "SEO", "La página está bloqueada para indexación (noindex)", `metaRobots = ${f.metaRobots} · xRobotsTag = ${f.xRobotsTag}`);
+  if (f.status >= 500) add("Crítica", "Técnica", `Error del servidor HTTP ${f.status}`, `status = ${f.status}`, "Revisar los logs del servidor y corregir el error");
+  else if (f.status >= 400) add("Crítica", "Técnica", `La página devuelve HTTP ${f.status}`, `status = ${f.status}`, "Restaurar la página o redirigirla (301) a la URL vigente");
+  if (f.palabrasVisibles < 20) add("Crítica", "Técnica", "Página prácticamente en blanco", `palabrasVisibles = ${f.palabrasVisibles}`, "Verificar que el contenido cargue (errores de JS, plantilla vacía)");
+  if (noindex) add("Crítica", "SEO", "La página está bloqueada para indexación (noindex)", `metaRobots = ${f.metaRobots} · xRobotsTag = ${f.xRobotsTag}`, "Quitar noindex si la página debe aparecer en Google");
 
-  if (!f.title) add("Alta", "SEO", "Falta la etiqueta title", "title = null");
-  if (f.h1.length === 0) add("Alta", "SEO", "Falta el H1", "h1 = []");
-  if (f.h1.length > 1) add("Alta", "SEO", `Hay ${f.h1.length} H1 (debe haber uno)`, `h1 = ${JSON.stringify(f.h1)}`);
+  if (!f.title) add("Alta", "SEO", "Falta la etiqueta title", "title = null", "Agregar un title único y descriptivo de 15–60 caracteres");
+  if (f.h1.length === 0) add("Alta", "SEO", "Falta el H1", "h1 = []", "Agregar un único H1 que describa la página y su oferta");
+  if (f.h1.length > 1) add("Alta", "SEO", `Hay ${f.h1.length} H1 (debe haber uno)`, `h1 = ${JSON.stringify(f.h1)}`, "Dejar un solo H1 y pasar el resto a H2");
   if (f.canonical && sinBarra(new URL(f.canonical, f.urlFinal).href) !== sinBarra(f.urlFinal))
-    add("Alta", "SEO", "El canonical apunta a otra URL", `canonical = ${f.canonical} · urlFinal = ${f.urlFinal}`);
+    add("Alta", "SEO", "El canonical apunta a otra URL", `canonical = ${f.canonical} · urlFinal = ${f.urlFinal}`, "Hacer que el canonical apunte a la propia URL, salvo que sea un duplicado intencional");
   if (!f.trackersDetectados.some((t) => t === "GA4" || t === "Google Tag Manager"))
-    add("Alta", "SEM", "Sin analítica: no se detecta GA4 ni Google Tag Manager", `trackersDetectados = ${JSON.stringify(f.trackersDetectados)}`);
-  if (f.tiempoRespuestaMs > 3000) add("Alta", "Técnica", "Respuesta lenta (más de 3000 ms)", `tiempoRespuestaMs = ${f.tiempoRespuestaMs}`);
+    add("Alta", "SEM", "Sin analítica: no se detecta GA4 ni Google Tag Manager", `trackersDetectados = ${JSON.stringify(f.trackersDetectados)}`, "Instalar GA4 (directo o vía Google Tag Manager)");
+  if (f.tiempoRespuestaMs > 3000) add("Alta", "Técnica", "Respuesta lenta (más de 3000 ms)", `tiempoRespuestaMs = ${f.tiempoRespuestaMs}`, "Revisar caché del servidor/hosting y peso del HTML");
   if (f.recursosHttpEnPaginaHttps > 0)
-    add("Alta", "Técnica", "Contenido mixto: recursos http en página https", `recursosHttpEnPaginaHttps = ${f.recursosHttpEnPaginaHttps}`);
+    add("Alta", "Técnica", "Contenido mixto: recursos http en página https", `recursosHttpEnPaginaHttps = ${f.recursosHttpEnPaginaHttps}`, "Cambiar las URLs de los recursos a https");
 
-  if (!f.metaDescription) add("Media", "SEO", "Falta la meta description", "metaDescription = null");
+  if (!f.metaDescription) add("Media", "SEO", "Falta la meta description", "metaDescription = null", "Agregar una meta description de hasta 160 caracteres");
   else if (f.metaDescription.length > 160)
-    add("Media", "SEO", `Meta description demasiado larga (${f.metaDescription.length} caracteres, máximo 160)`, `metaDescription = "${f.metaDescription}"`);
+    add("Media", "SEO", `Meta description demasiado larga (${f.metaDescription.length} caracteres, máximo 160)`, `metaDescription = "${f.metaDescription}"`, "Acortar la meta description a 160 caracteres");
   if (f.title && (f.title.length > 60 || f.title.length < 15))
-    add("Media", "SEO", `Title de ${f.title.length} caracteres (recomendado 15–60)`, `title = "${f.title}"`);
+    add("Media", "SEO", `Title de ${f.title.length} caracteres (recomendado 15–60)`, `title = "${f.title}"`, "Reescribir el title entre 15 y 60 caracteres");
   if (f.imagenesSinAltOAltVacio > 0)
-    add("Media", "SEO", `${f.imagenesSinAltOAltVacio} de ${f.imagenes} imágenes sin texto alt`, `imagenesSinAltOAltVacio = ${f.imagenesSinAltOAltVacio}`);
+    add("Media", "SEO", `${f.imagenesSinAltOAltVacio} de ${f.imagenes} imágenes sin texto alt`, `imagenesSinAltOAltVacio = ${f.imagenesSinAltOAltVacio}`, "Agregar texto alt descriptivo a las imágenes con contenido");
   if (!f.ogTitle || !f.ogImage)
-    add("Media", "SEM", "Faltan etiquetas Open Graph para compartir", `ogTitle = ${f.ogTitle} · ogImage = ${f.ogImage}`);
-  if (f.bloquesJsonLd === 0) add("Media", "SEO", "Sin datos estructurados (JSON-LD)", "bloquesJsonLd = 0");
-  if (!f.idioma) add("Media", "Contenido/UX", "Falta el atributo lang en <html>", "idioma = null");
-  if (!f.viewport) add("Media", "Técnica", "Falta la meta viewport (no adaptada a móvil)", "viewport = null");
+    add("Media", "SEM", "Faltan etiquetas Open Graph para compartir", `ogTitle = ${f.ogTitle} · ogImage = ${f.ogImage}`, "Agregar og:title, og:description y og:image");
+  if (f.bloquesJsonLd === 0) add("Media", "SEO", "Sin datos estructurados (JSON-LD)", "bloquesJsonLd = 0", "Agregar JSON-LD (ej. Hotel / LocalBusiness)");
+  if (!f.idioma) add("Media", "Contenido/UX", "Falta el atributo lang en <html>", "idioma = null", "Agregar lang=\"es\" (o el idioma correspondiente) en <html>");
+  if (!f.viewport) add("Media", "Técnica", "Falta la meta viewport (no adaptada a móvil)", "viewport = null", "Agregar <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
 
   if (f.palabrasVisibles >= 20 && f.palabrasVisibles < 300)
-    add("Baja", "Contenido/UX", "Poco texto en la página", `palabrasVisibles = ${f.palabrasVisibles}`);
+    add("Baja", "Contenido/UX", "Poco texto en la página", `palabrasVisibles = ${f.palabrasVisibles}`, "Sumar texto útil para el usuario y para buscadores");
   return s;
 }

@@ -44,16 +44,33 @@ Navegador (Playwright) → Extractor (código) → Analista · IA 1 ⇄ Revisor 
   **en vivo**: son las de la misma sesión que se audita. Es de solo lectura: bloquea todo
   envío de formularios, reservas y pagos (y de paso no ensucia GA4 ni el Pixel). Si no
   hay Edge ni Chrome, audita igual con el HTML crudo y lo avisa.
-- **Extractor**: sobre la página ya renderizada, saca datos duros (status, title, meta, H1/H2,
-  canonical, hreflang, alt, trackers GA4/GTM/Pixel/SynXis, tiempo de respuesta).
-  No es IA, así los agentes no pueden inventar datos.
-- **Analista**: lista problemas citando el dato que los prueba.
-- **Revisor**: descarta falsos positivos, prioriza (Crítica/Alta/Media/Baja) y si
-  el reporte está mal se lo **devuelve** al Analista con objeciones. Discuten
-  hasta que aprueba o se acaban las rondas.
-- **Soluciones**: arma el reporte final por área (SEO, SEM, Técnica, Contenido/UX)
-  y lo guarda en `workspace\proyectos\<proyecto>\<fecha>\reporte_final_priorizado.md`,
-  junto a la carpeta `capturas\` y una sección de evidencia por tamaño de pantalla.
+- **Extractor + mediciones (código)**: sobre la página ya renderizada saca los datos SEO
+  (status, title, meta, H1/H2, canonical, hreflang, alt, trackers) y **mide**, en cada
+  tamaño de pantalla: scroll horizontal, texto cortado, enlaces/botones tapados, imágenes
+  deformadas, banners fijos que tapan más del 30% de la pantalla, botones muy chicos para
+  el dedo, el menú móvil (lo abre y cuenta los enlaces) y bloques que se ven en escritorio
+  pero no en móvil. En el texto detecta caracteres corruptos (`Ã©`), placeholders
+  (`Lorem ipsum`) y bloques en otro idioma. Cada medición lleva un recorte de la captura.
+- **Analista (IA 1)**: dos pasadas en JSON: contenido/SEO/SEM con criterio, y
+  ortografía/gramática/idioma. Cada error de texto trae la frase original exacta y la
+  corrección; **el código verifica que la frase exista literalmente en la página** y
+  descarta la que no (así la IA no puede inventar errores).
+- **Revisor (IA 2)**: decide hallazgo por hallazgo (aprobar, descartar o devolver con una
+  objeción). El Analista responde: mantiene citando evidencia, modifica o retira.
+- **Soluciones**: escribe el resumen ejecutivo y el plan de acción citando IDs. La tabla
+  de hallazgos, la evidencia y los conteos los arma el código.
+
+Cada hallazgo tiene ID, categoría, prioridad, **estado** (confirmado = medido o verificado
+contra el texto · probable = inferido por IA · requiere revisión manual), **origen**
+(medido / IA), viewports afectados (el mismo problema en varios tamaños es un solo
+hallazgo), ubicación, evidencia, pasos para reproducirlo y recomendación. En el panel,
+la pestaña **Hallazgos** los muestra a medida que aparecen; al hacer clic, el visor abre
+su captura. El reporte queda en `workspace\proyectos\<proyecto>\<fecha>\` como
+`reporte_final_priorizado.md` + `hallazgos.json` + `capturas\`, incluyendo lo que se
+descartó y por qué.
+
+Página de prueba con errores plantados: `node scripts/fixture-server.mjs` y auditar
+`http://127.0.0.1:8099/` (detalle en `scripts/fixture/README.md`).
 
 Todo el comportamiento se edita en la carpeta `workspace` (botón "Abrir carpeta
 de agentes"), sin reinstalar:
@@ -64,7 +81,8 @@ de agentes"), sin reinstalar:
 | `contexto/*.md` | Criterios de prioridad y límites entre áreas (cualquier `.md` nuevo se incluye) |
 | `skills/0X_*.md` | La tarea y el formato de salida de cada agente |
 | `memoria/memoria.md` | Lo que NO es error (también desde "Agregar a memoria" en la app) |
-| `config.json` | `modelo` de Ollama, `rondasDebate`, `contexto` (tokens), `viewports`, `timeoutNavegacionMs`, `maxCapturasPorViewport`, `maxAlturaScroll` |
+| `config.json` | `modelo` de Ollama, `rondasDebate`, `contexto` (tokens), `viewports`, `timeoutNavegacionMs`, `maxCapturasPorViewport`, `maxRecortesPorViewport`, `maxAlturaScroll`, `maxBloquesTexto` |
+| `contexto/idioma.md` | Español argentino, marcas que no se traducen, glosario ES↔EN |
 
 ## Desarrollo
 

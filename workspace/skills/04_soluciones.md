@@ -1,25 +1,28 @@
-# Soluciones — reporte final
+# Soluciones — resumen ejecutivo y plan de acción
 
-Recibís las tablas de hallazgos validados de una o varias URLs.
-Generá el reporte final accionable.
+Recibís la lista final de hallazgos (ya validados) con su ID, prioridad, categoría,
+estado y viewports. La tabla y las fichas detalladas las arma el sistema; vos escribís
+solo el resumen y el orden de trabajo.
 
 Reglas:
-- Cada acción sale de UNA fila de las tablas. No agregues acciones que no estén en ellas.
-- Respetá la prioridad de la tabla; no la cambies.
-- La acción es lo que hay que HACER para resolver el problema, en lenguaje concreto
-  (ej: "Agregar un H1 único que describa el hotel", no "Optimizar el H1").
-- Si un mismo problema se repite en varias URLs, es UNA acción con todas las URLs.
-- Ignorá las secciones "Descartados" y "Objeciones".
+- Mencioná los hallazgos SOLO por su ID (ej. BOD-004). No inventes hallazgos ni IDs.
+- No cambies prioridades.
+- Agrupá por área y por responsable probable (desarrollo, contenido/redacción, marketing).
+- Los de estado "requiere revisión manual" van en una sección aparte para verificar a mano.
 
-Formato obligatorio:
+Formato obligatorio (Markdown):
 
 ## Resumen ejecutivo
-3 a 5 líneas: estado general y lo más urgente.
+3 a 5 líneas: estado general, lo más urgente y cuántos hallazgos hay por prioridad.
 
-## Acciones por área
-Una sección por área (### SEO, ### SEM, ### Técnica, ### Contenido/UX), omitiendo las vacías.
-Dentro de cada una, de Crítica a Baja:
-- **[Prioridad]** Acción concreta — URLs afectadas
+## Plan de acción
+### Desarrollo
+- IDs y qué hacer, de Crítica a Baja.
+### Contenido y redacción
+- …
+### Marketing / SEM
+- …
+(omití las secciones vacías)
 
-## Verificación
-Lista corta de qué re-auditar después de aplicar los cambios.
+## Para revisar a mano
+- IDs con estado "requiere revisión manual" y qué mirar.

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hotel de Prueba SiteCheck</title>
+<meta name="description" content="Página con errores plantados para probar la auditoría de SiteCheck.">
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #eee; }
+  nav a { margin: 0 8px; }
+  .menu-toggle { display: none; }
+  @media (max-width: 700px) {
+    nav { display: none; }
+    .menu-toggle { display: block; }
+    .solo-desktop { display: none; }
+  }
+  section { padding: 20px; }
+  #cookie-banner { position: fixed; top: 0; left: 0; right: 0; background: #222; color: #fff; padding: 10px; z-index: 20; }
+  .newsletter { position: fixed; bottom: 0; left: 0; right: 0; height: 45vh; background: #fffbe6; z-index: 10; padding: 20px; }
+</style>
+</head>
+<body>
+<!-- Errores plantados: ver scripts/fixture/README.md -->
+<div id="cookie-banner">Usamos cookies para mejorar tu experiencia.
+  <button onclick="this.parentElement.remove()">Rechazar</button>
+  <button onclick="this.parentElement.remove()">Aceptar</button>
+</div>
+<header>
+  <strong>Hotel de Prueba</strong>
+  <nav><a href="#habitaciones">Habitaciones</a><a href="#spa">Spa</a><a href="#contacto">Contacto</a></nav>
+  <button class="menu-toggle" aria-expanded="false" aria-label="Abrir menú">☰</button>
+</header>
+
+<section>
+  <h1>Bienvenidos al Hotel de Prueba</h1>
+  <p>Un lugar tranquilo frente a las sierras, ideal para descansar con toda la familia durante el fin de semana.</p>
+</section>
+
+<section id="habitaciones">
+  <h2>Habitaciones</h2>
+  <p>Nuestras habitasiones tienen vista al lago y desayuno incluído. La reservacion se confirma por correo electrónico en el día.</p>
+  <p>CafÃ© de la casa y medialunas todas las mañanas.</p>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
+  <div style="width: 120px; white-space: nowrap; overflow: hidden; border: 1px solid #ccc">Consultá nuestras promociones de temporada</div>
+  <img src="icon-192.png" width="300" height="100" alt="Logo del hotel">
+</section>
+
+<section id="spa">
+  <h2>Our Spa</h2>
+  <p>Our spa is the best place in the city and you will love it because it has all the comfort that you need for a relaxing day with your family and friends.</p>
+  <div style="position: relative; display: inline-block">
+    <button>Reservar ahora</button>
+    <div style="position: absolute; inset: 0; background: rgba(0, 0, 0, 0.01)"></div>
+  </div>
+  <a href="#info" style="display: inline-block; width: 14px; height: 14px; background: #ccc"></a>
+</section>
+
+<section>
+  <h2 class="solo-desktop">Experiencias</h2>
+  <p class="solo-desktop">Cabalgatas, trekking y degustaciones de vinos de la región durante todo el año.</p>
+  <div style="width: 600px; background: #def">Tabla de tarifas de temporada alta y baja</div>
+</section>
+
+<section id="contacto">
+  <h2>Contacto</h2>
+  <p>Escribinos y te respondemos en el día. Estamos en Villa General Belgrano, Córdoba.</p>
+</section>
+
+<div class="newsletter">Suscribite al newsletter y recibí ofertas exclusivas todas las semanas.</div>
+</body>
+</html>

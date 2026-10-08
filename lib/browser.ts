@@ -7,9 +7,16 @@
 import { chromium, type Browser, type Page } from "playwright-core";
 import { promises as fs } from "fs";
 import path from "path";
+import { medirPagina, medirPantalla, ubicarMarca, marcarMenuMovil, contarEnlacesVisibles, type Medicion } from "./measure";
 
 export type Viewport = { ancho: number; alto: number; movil?: boolean };
-export type Limites = { timeoutNavegacionMs: number; maxCapturasPorViewport: number; maxAlturaScroll: number };
+export type Limites = {
+  timeoutNavegacionMs: number;
+  maxCapturasPorViewport: number;
+  maxRecortesPorViewport: number;
+  maxAlturaScroll: number;
+};
+export type MedicionConEvidencia = Omit<Medicion, "marca" | "rectPantalla"> & { capturas: string[] };
 export type Problema = { tipo: "error" | "advertencia"; origen: "javascript" | "consola" | "red"; detalle: string };
 export type Seccion = { titulo: string; selector: string; texto: string };
 export type PasoNavegador = { accion: string; viewport: string; captura?: string };
@@ -31,6 +38,7 @@ export type ResultadoViewport = {
   pedidosBloqueados: number;
   html: string;
   secciones: Seccion[];
+  mediciones: MedicionConEvidencia[];
 };
 
 const MOBILE_UA =
@@ -68,7 +76,7 @@ export async function auditarViewport(
   const r: ResultadoViewport = {
     viewport, movil: !!vp.movil, estado: "ok", status: null, urlFinal: url, redireccionado: false, ms: 0,
     xRobotsTag: null, alturaPagina: 0, capturas: [], interacciones: [], problemas: [], pedidosBloqueados: 0,
-    html: "", secciones: [],
+    html: "", secciones: [], mediciones: [],
   };
   await fs.mkdir(dirCapturas, { recursive: true });
 
@@ -115,13 +123,51 @@ export async function auditarViewport(
   });
 
   let n = 0;
-  const capturar = async (etiqueta: string) => {
+  const capturar = async (etiqueta: string, clip?: { x: number; y: number; width: number; height: number }) => {
     const file = `${viewport}_${String(++n).padStart(2, "0")}_${etiqueta}.jpg`;
-    await page.screenshot({ path: path.join(dirCapturas, file), type: "jpeg", quality: 75 });
+    await page.screenshot({ path: path.join(dirCapturas, file), type: "jpeg", quality: 80, clip });
     const rel = `${relCapturas}/${file}`;
     r.capturas.push(rel);
     paso({ accion: `Captura: ${etiqueta}`, viewport, captura: rel });
+    return rel;
   };
+  // Recorte de evidencia de una medición; respeta el tope de recortes por viewport.
+  let recortes = 0;
+  const conEvidencia = async (m: Medicion, extra: string[] = []): Promise<MedicionConEvidencia> => {
+    const { marca, rectPantalla, ...resto } = m;
+    const capturas = [...extra];
+    // Si la página es más ancha que el teléfono, el navegador móvil la achica para que entre
+    // y las coordenadas ya no coinciden con la captura: en ese caso la pantalla completa
+    // (que muestra la página achicada) es la evidencia.
+    const ancho = page.viewportSize()?.width ?? vp.ancho;
+    const achicada = (await page.evaluate(() => innerWidth)) > ancho + 1;
+    if (achicada) {
+      if (!capturas.length) capturas.push(...r.capturas.filter((c) => c.includes("_pantalla-1")));
+    } else if (recortes < lim.maxRecortesPorViewport && (marca || rectPantalla)) {
+      const area = marca
+        ? await ubicarMarca(page, marca)
+        : rectPantalla && { x: rectPantalla.x, y: rectPantalla.y, width: rectPantalla.w, height: rectPantalla.h };
+      const clip = area && {
+        x: area.x,
+        y: area.y,
+        width: Math.min(area.width, ancho - area.x),
+        height: Math.min(area.height, vp.alto - area.y),
+      };
+      if (clip && clip.width >= 10 && clip.height >= 10) {
+        recortes++;
+        // un recorte fallido no puede tirar abajo la auditoría del viewport
+        const rel = await capturar(`recorte-${m.regla}`, clip).catch(() => null);
+        if (rel) capturas.push(rel);
+      }
+    }
+    return { ...resto, capturas };
+  };
+  // Clic no destructivo: si Playwright no puede confirmar que el elemento está "estable"
+  // (pasa en móvil con la página achicada), se dispara el clic del DOM sobre el mismo botón.
+  const clicMarcado = () =>
+    page.click("[data-sitecheck-clic]", { timeout: 3000 }).catch(() =>
+      page.evaluate(() => (document.querySelector("[data-sitecheck-clic]") as HTMLElement | null)?.click())
+    );
 
   try {
     paso({ accion: "Cargando la página", viewport });
@@ -141,7 +187,7 @@ export async function auditarViewport(
     const cookie = await bannerCookies(page);
     if (cookie) {
       paso({ accion: `Banner de cookies: clic en "${cookie}"`, viewport });
-      await page.click("[data-sitecheck-clic]", { timeout: 3000 }).catch(() => {});
+      await clicMarcado();
       await page.waitForTimeout(800);
       r.interacciones.push(`Banner de cookies: clic en "${cookie}"`);
     }
@@ -157,18 +203,61 @@ export async function auditarViewport(
     }, lim.maxAlturaScroll);
     await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {});
 
+    paso({ accion: "Midiendo desbordes, texto cortado e imágenes", viewport });
+    const dePagina = await medirPagina(page, !!vp.movil);
+
     r.alturaPagina = await page.evaluate(() => document.documentElement.scrollHeight);
     const pantallas = Math.min(Math.ceil(Math.min(r.alturaPagina, lim.maxAlturaScroll) / vp.alto), lim.maxCapturasPorViewport);
+    const vistas = new Set<string>();
     for (let i = 0; i < pantallas; i++) {
       await page.evaluate((y) => scrollTo({ top: y, behavior: "instant" }), i * vp.alto);
       await page.waitForTimeout(300);
-      await capturar(`pantalla-${i + 1}`);
+      const pantalla = await capturar(`pantalla-${i + 1}`);
+      paso({ accion: `Buscando elementos tapados (pantalla ${i + 1})`, viewport });
+      for (const m of await medirPantalla(page, i === 0, i === pantallas - 1)) {
+        const clave = `${m.regla}|${m.selector}`;
+        if (vistas.has(clave)) continue; // el mismo banner fijo aparece en todas las pantallas
+        vistas.add(clave);
+        r.mediciones.push(await conEvidencia(m, [pantalla]));
+      }
     }
-    await page.evaluate(() => scrollTo({ top: 0, behavior: "instant" }));
+    for (const m of dePagina) r.mediciones.push(await conEvidencia(m));
+    await page.evaluate(() => scrollTo({ top: 0, left: 0, behavior: "instant" }));
 
     paso({ accion: "Extrayendo texto renderizado", viewport });
     r.secciones = await textoPorSecciones(page);
     r.html = await page.content();
+
+    if (vp.movil) {
+      paso({ accion: "Probando el menú móvil", viewport });
+      const menu = await marcarMenuMovil(page);
+      if (!menu.encontrado) {
+        if (menu.enlacesVisibles === 0) {
+          r.mediciones.push({
+            regla: "menu-movil-no-encontrado", categoria: "Navegación", prioridad: "Media", estado: "requiere revisión manual",
+            descripcion: "No se encontró un botón de menú ni enlaces de navegación visibles arriba de la página",
+            medicion: "0 enlaces visibles en la primera pantalla y ningún botón con aria-expanded o clase de menú",
+            recomendacion: "Verificar a mano que el menú sea accesible en este tamaño",
+            capturas: r.capturas.filter((c) => c.includes("_pantalla-1")),
+          });
+        }
+      } else {
+        await clicMarcado();
+        await page.waitForTimeout(800);
+        const despues = await contarEnlacesVisibles(page);
+        const abierto = await capturar("menu-abierto");
+        r.interacciones.push(`Menú móvil: clic en el botón de menú (${menu.enlacesVisibles} → ${despues} enlaces visibles)`);
+        if (despues <= menu.enlacesVisibles) {
+          r.mediciones.push({
+            regla: "menu-movil-no-abre", categoria: "Navegación", prioridad: "Alta", estado: "requiere revisión manual",
+            descripcion: "Al tocar el botón de menú no aparecen enlaces nuevos: el menú podría no abrir",
+            medicion: `enlaces visibles antes ${menu.enlacesVisibles}, después ${despues}`,
+            recomendacion: "Verificar que el menú móvil abra y muestre las secciones del sitio",
+            capturas: [...r.capturas.filter((c) => c.includes("_pantalla-1")), abierto],
+          });
+        }
+      }
+    }
   } catch (err) {
     r.estado = "error";
     r.error = err instanceof Error ? err.message.split("\n")[0] : String(err);

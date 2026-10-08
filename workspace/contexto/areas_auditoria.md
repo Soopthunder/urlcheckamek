@@ -9,3 +9,11 @@
   contenido mixto (http en https), viewport/mobile, métricas de PageSpeed.
 - **Contenido/UX**: cantidad y claridad del texto, títulos comprensibles,
   idioma correcto de la página, estructura legible para el usuario.
+- **Responsive**: lo que cambia o se rompe según el tamaño de pantalla: scroll horizontal,
+  texto cortado, elementos tapados, contenido que desaparece, banners que tapan la pantalla.
+- **Visual**: imágenes deformadas o recortadas, superposiciones, problemas de espaciado
+  que afectan la lectura. No es gusto de diseño: tiene que haber impacto concreto.
+- **Navegación**: menús que no abren, enlaces o botones inaccesibles o demasiado chicos.
+- **Lingüística**: ortografía, gramática, puntuación, redacción, caracteres corruptos,
+  placeholders publicados, mezcla de idiomas.
+- **Traducción**: diferencias entre la versión en español y en inglés.

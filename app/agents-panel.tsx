@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { Hallazgo } from "@/lib/findings";
 
-type AgentEvent = { agent?: string; kind: string; text?: string; url?: string; viewport?: string; captura?: string };
+type AgentEvent = { agent?: string; kind: string; text?: string; url?: string; viewport?: string; captura?: string; hallazgo?: Hallazgo };
+const COLOR_PRIORIDAD: Record<string, string> = { Crítica: "#e5484d", Alta: "#f0883e", Media: "#e0a63c", Baja: "#8b93a1" };
+const ORIGEN: Record<string, string> = { medido: "medido", "ia-texto": "IA texto", "ia-visual": "IA visión" };
 // capturas[url][viewport] = rutas relativas a proyectos/, en el orden en que se tomaron
 type Capturas = Record<string, Record<string, string[]>>;
 const img = (f: string) => `/api/captura?f=${encodeURIComponent(f)}`;
@@ -30,6 +33,9 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
   const [verUrl, setVerUrl] = useState<string | null>(null); // null = seguir en vivo
   const [verViewport, setVerViewport] = useState<string | null>(null);
   const [verCaptura, setVerCaptura] = useState<string | null>(null);
+  const [hallazgos, setHallazgos] = useState<Hallazgo[]>([]);
+  const [pestana, setPestana] = useState<"chat" | "hallazgos">("chat");
+  const [soloEsteTamano, setSoloEsteTamano] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -52,6 +58,10 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
         }));
       }
       return; // los pasos del navegador van al visor, no al chat
+    }
+    if (e.kind === "hallazgo" && e.hallazgo) {
+      setHallazgos((hs) => [...hs, e.hallazgo!]);
+      return;
     }
     if (e.agent === "extractor") {
       setVivo((v) => v && { ...v, viewport: "todos", accion: "Navegación terminada · analizando con IA" });
@@ -76,6 +86,7 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
     setVerUrl(null);
     setVerViewport(null);
     setVerCaptura(null);
+    setHallazgos([]);
     try {
       const res = await fetch("/api/audit", {
         method: "POST",
@@ -213,6 +224,58 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
           )}
         </div>
 
+        <div className="lado">
+        <div className="pestanas">
+          <button className={pestana === "chat" ? "" : "secondary"} onClick={() => setPestana("chat")}>Conversación</button>
+          <button className={pestana === "hallazgos" ? "" : "secondary"} onClick={() => setPestana("hallazgos")}>
+            Hallazgos ({hallazgos.length})
+          </button>
+          {pestana === "hallazgos" && vpVisor && (
+            <label className="mini">
+              <input type="checkbox" checked={soloEsteTamano} onChange={(e) => setSoloEsteTamano(e.target.checked)} /> solo {vpVisor}
+            </label>
+          )}
+        </div>
+        {pestana === "hallazgos" ? (
+          <div className="lista-hallazgos">
+            {!hallazgos.length && <p className="mini">Los hallazgos aparecen acá a medida que se generan.</p>}
+            {hallazgos
+              .filter((h) => !soloEsteTamano || h.viewports.includes("todos") || h.viewports.includes(vpVisor ?? ""))
+              .map((h) => {
+                // el recorte señala el problema exacto; si no hay, la pantalla completa
+                const delTamano = (h.evidencia.capturas ?? []).filter((c) => !soloEsteTamano || c.includes(`/${vpVisor}_`));
+                const captura = delTamano.find((c) => c.includes("_recorte-")) ?? delTamano[0] ?? h.evidencia.capturas?.[0];
+                return (
+                  <div
+                    key={h.id}
+                    className={`hallazgo ${captura ? "con-captura" : ""}`}
+                    style={{ borderColor: COLOR_PRIORIDAD[h.prioridad] }}
+                    onClick={() => {
+                      if (!captura) return;
+                      setVerUrl(h.url);
+                      setVerViewport(captura.split("/").pop()!.split("_")[0]);
+                      setVerCaptura(captura);
+                    }}
+                  >
+                    <div className="h-meta">
+                      <strong style={{ color: COLOR_PRIORIDAD[h.prioridad] }}>{h.prioridad}</strong> · {h.categoria} ·{" "}
+                      <span className={`estado ${h.estado === "confirmado" ? "ok" : ""}`}>{h.estado}</span> · {ORIGEN[h.origen]} ·{" "}
+                      {h.viewports.join(", ")} <span className="h-id">{h.id}</span>
+                    </div>
+                    <div>{h.descripcion}</div>
+                    {h.evidencia.texto && (
+                      <div className="cita">
+                        «{h.evidencia.texto}»{h.correccion && <> → <strong>«{h.correccion}»</strong></>}
+                      </div>
+                    )}
+                    {h.evidencia.medicion && <div className="mini">{h.evidencia.medicion}</div>}
+                    {h.ubicacion && <code className="mini">{h.ubicacion}</code>}
+                    {captura && <div className="mini ver">📷 ver evidencia ({h.evidencia.capturas!.length})</div>}
+                  </div>
+                );
+              })}
+          </div>
+        ) : (
         <div className="chat">
           {!bubbles.length && (
             <p className="mini">
@@ -230,6 +293,8 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
             );
           })}
           <div ref={endRef} />
+        </div>
+        )}
         </div>
         </div>
 
