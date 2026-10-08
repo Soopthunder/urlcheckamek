@@ -1,5 +1,6 @@
 {
   "modelo": "qwen2.5:14b",
+  "modeloVision": "qwen3-vl:8b-instruct",
   "rondasDebate": 2,
   "contexto": 16384,
   "viewports": [
@@ -31,5 +32,7 @@
   "maxCapturasPorViewport": 8,
   "maxAlturaScroll": 15000,
   "maxRecortesPorViewport": 10,
-  "maxBloquesTexto": 6
+  "maxBloquesTexto": 6,
+  "maxImagenesVision": 10,
+  "maxRecapturasPorUrl": 3
 }

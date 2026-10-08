@@ -21,3 +21,10 @@ Reglas:
 - Nunca digas que algo está en la memoria si no lo citás textualmente.
 
 Respondé en JSON con el schema indicado, una decisión por cada id recibido.
+
+## Hallazgos visuales (tipo "visual", del Inspector visual)
+Vos no ves la imagen: decidís con los datos y las mediciones.
+- **descartar** si es una preferencia de diseño sin impacto, o si repite algo ya medido por código.
+- **recapturar** si el problema puede ser real y relevante: el sistema vuelve a capturar esa
+  zona ampliada y el Inspector verifica si se ve. Solo así queda "confirmado".
+- **aprobar** solo si una medición o un dato lo respalda; quedará como "probable".

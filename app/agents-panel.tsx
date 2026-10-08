@@ -10,7 +10,7 @@ const ORIGEN: Record<string, string> = { medido: "medido", "ia-texto": "IA texto
 type Capturas = Record<string, Record<string, string[]>>;
 const img = (f: string) => `/api/captura?f=${encodeURIComponent(f)}`;
 type Bubble = { agent: string; kind: string; text: string };
-type Status = { ollama: boolean; modelo: string; modeloListo: boolean; workspace: string };
+type Status = { ollama: boolean; modelo: string; modeloListo: boolean; vision: { disponible: boolean; motivo: string }; workspace: string };
 
 const AGENTS: Record<string, { name: string; color: string }> = {
   extractor: { name: "Extractor", color: "#8b93a1" },
@@ -18,6 +18,7 @@ const AGENTS: Record<string, { name: string; color: string }> = {
   revisor: { name: "Revisor · IA 2", color: "#e0a63c" },
   soluciones: { name: "Soluciones", color: "#35c07a" },
   sistema: { name: "Sistema", color: "#8b93a1" },
+  inspector: { name: "Inspector visual · IA", color: "#c678dd" },
 };
 
 export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose: () => void }) {
@@ -148,6 +149,13 @@ export default function AgentsPanel({ urls, onClose }: { urls: string[]; onClose
           <p className="warn">
             Ollama no está corriendo. Instalalo desde ollama.com (o <code>winget install Ollama.Ollama</code>),
             abrilo y descargá el modelo: <code>ollama pull {status.modelo}</code>
+          </p>
+        )}
+        {status?.ollama && status.modeloListo && (
+          <p className={status.vision.disponible ? "mini" : "warn"}>
+            {status.vision.disponible
+              ? `Análisis visual por IA: activo (${status.vision.motivo})`
+              : `Análisis visual por IA no disponible: ${status.vision.motivo}. Se auditan igual las mediciones por código.`}
           </p>
         )}
         {status?.ollama && !status.modeloListo && (

@@ -2,11 +2,11 @@ import { NextRequest } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 import { execFile } from "child_process";
-import { WORKSPACE, OLLAMA, getConfig } from "@/lib/agents";
+import { WORKSPACE, OLLAMA, getConfig, estadoVision } from "@/lib/agents";
 
-// Estado de Ollama + modelo, para que la UI diga qué falta instalar.
+// Estado de Ollama + modelos, para que la UI diga qué falta instalar.
 export async function GET() {
-  const { modelo } = await getConfig();
+  const { modelo, modeloVision } = await getConfig();
   const tags = await fetch(OLLAMA + "/api/tags", { signal: AbortSignal.timeout(3000) })
     .then((r) => r.json())
     .catch(() => null);
@@ -15,6 +15,7 @@ export async function GET() {
     ollama: !!tags,
     modelo,
     modeloListo: names.some((n) => n === modelo || n === modelo + ":latest"),
+    vision: tags ? await estadoVision(modeloVision) : { disponible: false, motivo: "Ollama no responde" },
     workspace: WORKSPACE,
   });
 }

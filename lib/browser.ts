@@ -63,6 +63,93 @@ export async function abrirNavegador(signal: AbortSignal): Promise<Browser> {
   throw new Error("No se encontró Microsoft Edge ni Google Chrome para navegar las páginas");
 }
 
+// Sesión de solo lectura: aborta todo lo que no sea GET/HEAD/OPTIONS y bloquea service workers.
+async function nuevoContexto(browser: Browser, vp: Viewport, alBloquear: () => void, escala = vp.movil ? 2 : 1) {
+  const ctx = await browser.newContext({
+    viewport: { width: vp.ancho, height: vp.alto },
+    deviceScaleFactor: escala,
+    isMobile: !!vp.movil,
+    hasTouch: !!vp.movil,
+    userAgent: vp.movil ? MOBILE_UA : undefined,
+    serviceWorkers: "block", // un SW podría saltear el bloqueo de pedidos de abajo
+    acceptDownloads: false,
+  });
+  await ctx.route("**/*", (route) => {
+    const m = route.request().method();
+    if (m === "GET" || m === "HEAD" || m === "OPTIONS") return route.continue();
+    alBloquear();
+    return route.abort("blockedbyclient");
+  });
+  return ctx;
+}
+
+// Clic no destructivo sobre el elemento marcado con data-sitecheck-clic. Si Playwright no
+// puede confirmar que está "estable" (pasa en móvil con la página achicada), se dispara el
+// clic del DOM sobre el mismo botón.
+const clic = (page: Page) =>
+  page.click("[data-sitecheck-clic]", { timeout: 3000 }).catch(() =>
+    page.evaluate(() => (document.querySelector("[data-sitecheck-clic]") as HTMLElement | null)?.click())
+  );
+
+// Grilla de 3×3 sobre la pantalla: es como el inspector visual dice dónde está un problema.
+const ZONAS: Record<string, [number, number]> = {
+  "arriba-izquierda": [0, 0], arriba: [1, 0], "arriba-derecha": [2, 0],
+  izquierda: [0, 1], centro: [1, 1], derecha: [2, 1],
+  "abajo-izquierda": [0, 2], abajo: [1, 2], "abajo-derecha": [2, 2],
+};
+export const ZONAS_VALIDAS = Object.keys(ZONAS);
+
+// Recaptura pedida por el Revisor: vuelve a cargar la página en el mismo tamaño, baja hasta
+// la misma pantalla y captura la zona ampliada (doble resolución) para verificar un hallazgo
+// visual. Sesión nueva y de solo lectura, como la original.
+export async function recapturar(
+  browser: Browser, url: string, vp: Viewport, lim: Limites, scrollY: number, zona: string,
+  dirCapturas: string, relCapturas: string, etiqueta: string, paso: (p: PasoNavegador) => void
+): Promise<string | null> {
+  const viewport = nombreViewport(vp);
+  const ctx = await nuevoContexto(browser, vp, () => {}, 2);
+  try {
+    const page = await ctx.newPage();
+    paso({ accion: `Recaptura pedida por el Revisor (${etiqueta}): cargando`, viewport });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: lim.timeoutNavegacionMs });
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+    if (await bannerCookies(page)) {
+      await clic(page);
+      await page.waitForTimeout(800);
+    }
+    // recorrer hasta la posición para que cargue lo diferido, igual que en la pasada original
+    await page.evaluate(async (y) => {
+      for (let p = 0; p < y; p += innerHeight * 0.8) {
+        scrollTo({ top: p, behavior: "instant" });
+        await new Promise((ok) => setTimeout(ok, 200));
+      }
+      scrollTo({ top: y, behavior: "instant" });
+    }, scrollY);
+    await page.waitForTimeout(600);
+    const achicada = (await page.evaluate(() => innerWidth)) > vp.ancho + 1;
+    const [cx, cy] = ZONAS[zona] ?? ZONAS.centro;
+    const cw = vp.ancho / 3, ch = vp.alto / 3;
+    // la celda señalada, ampliada a 2×2 celdas centradas en ella para no perder contexto
+    const clip = achicada
+      ? undefined
+      : {
+          x: Math.min(Math.max(0, cx * cw - cw / 2), vp.ancho - 2 * cw),
+          y: Math.min(Math.max(0, cy * ch - ch / 2), vp.alto - 2 * ch),
+          width: 2 * cw,
+          height: 2 * ch,
+        };
+    const file = `${viewport}_recaptura-${etiqueta}.jpg`;
+    await page.screenshot({ path: path.join(dirCapturas, file), type: "jpeg", quality: 85, clip });
+    const rel = `${relCapturas}/${file}`;
+    paso({ accion: `Recaptura ampliada: ${zona}`, viewport, captura: rel });
+    return rel;
+  } catch {
+    return null;
+  } finally {
+    await ctx.close().catch(() => {});
+  }
+}
+
 export async function auditarViewport(
   browser: Browser,
   url: string,
@@ -80,22 +167,7 @@ export async function auditarViewport(
   };
   await fs.mkdir(dirCapturas, { recursive: true });
 
-  const ctx = await browser.newContext({
-    viewport: { width: vp.ancho, height: vp.alto },
-    deviceScaleFactor: vp.movil ? 2 : 1,
-    isMobile: !!vp.movil,
-    hasTouch: !!vp.movil,
-    userAgent: vp.movil ? MOBILE_UA : undefined,
-    serviceWorkers: "block", // un SW podría saltear el bloqueo de pedidos de abajo
-    acceptDownloads: false,
-  });
-  await ctx.route("**/*", (route) => {
-    const m = route.request().method();
-    if (m === "GET" || m === "HEAD" || m === "OPTIONS") return route.continue();
-    r.pedidosBloqueados++;
-    return route.abort("blockedbyclient");
-  });
-
+  const ctx = await nuevoContexto(browser, vp, () => r.pedidosBloqueados++);
   const page = await ctx.newPage();
   const dominio = new URL(url).hostname.replace(/^www\./, "");
   const propio = (u: string) => {
@@ -162,12 +234,7 @@ export async function auditarViewport(
     }
     return { ...resto, capturas };
   };
-  // Clic no destructivo: si Playwright no puede confirmar que el elemento está "estable"
-  // (pasa en móvil con la página achicada), se dispara el clic del DOM sobre el mismo botón.
-  const clicMarcado = () =>
-    page.click("[data-sitecheck-clic]", { timeout: 3000 }).catch(() =>
-      page.evaluate(() => (document.querySelector("[data-sitecheck-clic]") as HTMLElement | null)?.click())
-    );
+  const clicMarcado = () => clic(page);
 
   try {
     paso({ accion: "Cargando la página", viewport });

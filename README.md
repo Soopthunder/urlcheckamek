@@ -55,8 +55,19 @@ Navegador (Playwright) → Extractor (código) → Analista · IA 1 ⇄ Revisor 
   ortografía/gramática/idioma. Cada error de texto trae la frase original exacta y la
   corrección; **el código verifica que la frase exista literalmente en la página** y
   descarta la que no (así la IA no puede inventar errores).
-- **Revisor (IA 2)**: decide hallazgo por hallazgo (aprobar, descartar o devolver con una
-  objeción). El Analista responde: mantiene citando evidencia, modifica o retira.
+- **Inspector visual (IA con visión, opcional)**: mira las capturas reales (hasta
+  `maxImagenesVision` pantallas por URL, repartidas entre los tamaños) a resolución
+  completa y propone problemas visuales que el código no mide (superposiciones, imágenes
+  mal recortadas, contraste, elementos rotos). Sus hallazgos son **probables**.
+  Requiere un modelo de visión en `modeloVision` (recomendado: `qwen3-vl:8b-instruct`;
+  la variante `qwen3-vl:8b` "thinking" no sirve: piensa sin llegar a responder). Si no
+  hay modelo de visión, el panel y el reporte lo dicen y no se simula ningún análisis visual.
+- **Revisor (IA 2)**: decide hallazgo por hallazgo (aprobar, descartar, devolver con una
+  objeción o, para los visuales, **pedir una recaptura**). El Analista responde: mantiene
+  citando evidencia, modifica o retira. Una recaptura vuelve a cargar la página en ese
+  tamaño, captura la zona ampliada al doble de resolución y el Inspector verifica si el
+  problema se ve: solo así un hallazgo visual pasa a **confirmado** (máximo
+  `maxRecapturasPorUrl` por URL).
 - **Soluciones**: escribe el resumen ejecutivo y el plan de acción citando IDs. La tabla
   de hallazgos, la evidencia y los conteos los arma el código.
 
@@ -81,7 +92,7 @@ de agentes"), sin reinstalar:
 | `contexto/*.md` | Criterios de prioridad y límites entre áreas (cualquier `.md` nuevo se incluye) |
 | `skills/0X_*.md` | La tarea y el formato de salida de cada agente |
 | `memoria/memoria.md` | Lo que NO es error (también desde "Agregar a memoria" en la app) |
-| `config.json` | `modelo` de Ollama, `rondasDebate`, `contexto` (tokens), `viewports`, `timeoutNavegacionMs`, `maxCapturasPorViewport`, `maxRecortesPorViewport`, `maxAlturaScroll`, `maxBloquesTexto` |
+| `config.json` | `modelo` de Ollama, `rondasDebate`, `contexto` (tokens), `viewports`, `timeoutNavegacionMs`, `maxCapturasPorViewport`, `maxRecortesPorViewport`, `maxAlturaScroll`, `maxBloquesTexto`, `modeloVision`, `maxImagenesVision`, `maxRecapturasPorUrl` |
 | `contexto/idioma.md` | Español argentino, marcas que no se traducen, glosario ES↔EN |
 
 ## Desarrollo
